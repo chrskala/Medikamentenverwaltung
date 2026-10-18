@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}</style>
+<title>Medikationsplan-Assistent</title>
+<meta name="theme-color" content="#0f6b6f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Familjen+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="vendor/zxing.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/tesseract.min.js"></script>
+<script>if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc="vendor/pdf.worker.min.js";</script>
+<style>
+/* Layout: Handy zuerst. Kopfzeile mit Personenwahl, eine Ansicht, Navigationsleiste unten; Bearbeiten in Vollbild-Blättern */
+:root{
+  --bg:#eef3f3; --paper:#ffffff; --ink:#14292b; --muted:#56696b; --line:#d3dfdf;
+  --accent:#0f6b6f; --accent-ink:#ffffff; --accent-soft:#dcefee;
+  --hl:#ffe27a; --hl-ink:#3a2c00;
+  --warn:#a35a00; --warn-soft:#fdf0dc; --bad:#b3261e; --bad-soft:#fbe6e4; --ok:#2f7a3d; --ok-soft:#e4f3e6;
+  --f-display:"Familjen Grotesk",system-ui,sans-serif;
+  --f-body:"Atkinson Hyperlegible",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+  --navh:64px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1415; --paper:#152122; --ink:#e3eeee; --muted:#93a8aa; --line:#2a3b3d;
+  --accent:#5cc3c0; --accent-ink:#06201f; --accent-soft:#16383a;
+  --hl:#6b5300; --hl-ink:#fff4cc;
+  --warn:#f0b35c; --warn-soft:#3a2a12; --bad:#f2928a; --bad-soft:#3d1b19; --ok:#7fcf8c; --ok-soft:#173222; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1415; --paper:#152122; --ink:#e3eeee; --muted:#93a8aa; --line:#2a3b3d;
+  --accent:#5cc3c0; --accent-ink:#06201f; --accent-soft:#16383a;
+  --hl:#6b5300; --hl-ink:#fff4cc;
+  --warn:#f0b35c; --warn-soft:#3a2a12; --bad:#f2928a; --bad-soft:#3d1b19; --ok:#7fcf8c; --ok-soft:#173222; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font:16px/1.45 var(--f-body);margin:0;-webkit-tap-highlight-color:transparent}
+h1,h2,h3{font-family:var(--f-display);margin:0;line-height:1.2;text-wrap:balance}
+h2{font-size:1.25rem}h3{font-size:1.05rem}
+p{margin:0}
+.muted{color:var(--muted)}.small{font-size:.875rem}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.wrap{max-width:620px;margin:0 auto;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px))}
+
+/* Kopfzeile */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--accent);color:var(--accent-ink)}
+.top .wrap{display:flex;align-items:center;gap:10px;padding-block:10px}
+.top .app{font:700 .8rem var(--f-body);letter-spacing:.06em;text-transform:uppercase;opacity:.85;white-space:nowrap}
+.personbtn{flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(255,255,255,.16);color:inherit;border:0;border-radius:10px;padding:8px 12px;font:700 1.05rem var(--f-display);cursor:pointer;text-align:left}
+.personbtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Ansichten */
+main{padding-bottom:calc(var(--navh) + 24px + env(safe-area-inset-bottom,0px))}
+.view .wrap{display:flex;flex-direction:column;gap:14px;padding-block:16px}
+.vhead{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.card.warn{border-color:var(--warn);background:linear-gradient(var(--warn-soft),var(--warn-soft)) top/100% 6px no-repeat,var(--paper)}
+.card.go{border-color:var(--accent);background:linear-gradient(var(--accent),var(--accent)) top/100% 6px no-repeat,var(--paper)}
+.card.ok{border-color:var(--ok);background:linear-gradient(var(--ok),var(--ok)) top/100% 6px no-repeat,var(--paper)}
+.kicker{font:700 .74rem var(--f-body);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.big{font:700 2.2rem/1 var(--f-display)}
+.rows{display:flex;flex-direction:column}
+.rows>div{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.rows>div:first-child{border-top:0}
+.rows b{font-weight:700}
+.rows .r{white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* Knöpfe & Felder */
+.btn{font:700 1rem var(--f-body);border-radius:12px;padding:12px 16px;min-height:48px;cursor:pointer;border:1.5px solid var(--accent);background:var(--accent);color:var(--accent-ink);display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;text-align:center}
+.btn.sec{background:transparent;color:var(--accent)}
+.btn.ghost{border-color:var(--line);background:var(--paper);color:var(--ink)}
+.btn.danger{border-color:var(--bad);background:var(--bad);color:#fff}
+.btn.sm{min-height:40px;padding:8px 12px;font-size:.92rem;border-radius:10px}
+.btn.block{width:100%}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btns>.btn{flex:1 1 140px}
+label{display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--muted)}
+input,select,textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0;min-height:46px}
+textarea{min-height:120px;resize:vertical}
+textarea.mail{min-height:300px;font:.92rem/1.5 var(--f-mono)}
+.chk{flex-direction:row;align-items:center;gap:10px;color:var(--ink);font-size:1rem}
+.chk input{width:24px;height:24px;min-height:0;flex:none;accent-color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.note{font-size:.9rem;padding:10px 12px;border-radius:10px;background:var(--accent-soft)}
+.note.warn{background:var(--warn-soft);color:var(--warn)}
+.note.err{background:var(--bad-soft);color:var(--bad)}
+.note.ok{background:var(--ok-soft);color:var(--ok)}
+.pill{display:inline-block;font:700 .78rem var(--f-body);padding:3px 9px;border-radius:99px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.pill.low{background:var(--warn-soft);color:var(--warn)}
+.pill.out{background:var(--bad-soft);color:var(--bad)}
+.pill.pend{background:var(--accent);color:var(--accent-ink)}
+.pill.gray{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+
+/* Medikamenten-Karte */
+.mlist{display:flex;flex-direction:column;gap:10px}
+.mcard{display:block;width:100%;text-align:left;background:var(--paper);border:1.5px solid var(--line);border-radius:14px;padding:0;overflow:hidden;color:inherit;font:inherit;cursor:pointer}
+.mcard.low{border-left:7px solid var(--warn)}
+.mcard.out{border-left:7px solid var(--bad)}
+.mname{display:block;background:var(--hl);color:var(--hl-ink);padding:10px 14px;font:700 1.12rem/1.25 var(--f-display);overflow-wrap:anywhere}
+.mname small{display:block;font:500 .82rem var(--f-body);opacity:.85}
+.mbody{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:10px 14px}
+.mfacts{display:flex;flex-wrap:wrap;gap:6px;flex:1 1 150px}
+.dgrid{display:grid;grid-template-columns:repeat(4,3em);border:1px solid var(--line);border-radius:8px;overflow:hidden;text-align:center;font-variant-numeric:tabular-nums}
+.dgrid span{display:block;padding:2px 0;font:500 .66rem var(--f-mono);color:var(--muted);background:var(--bg)}
+.dgrid b{display:block;padding:3px 0;font:700 1.05rem var(--f-mono)}
+.dgrid div+div{border-left:1px solid var(--line)}
+.dgrid b.z{color:var(--muted);font-weight:400}
+.dtext{font-weight:700}
+
+/* Auswahl-/Abholzeilen */
+.sel{background:var(--paper);border:1.5px solid var(--line);border-radius:14px;overflow:hidden}
+.sel.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.sel .head{display:flex;flex-direction:row;text-align:left;align-items:center;gap:12px;padding:10px 14px;background:var(--hl);color:var(--hl-ink);cursor:pointer;font-size:1rem}
+.sel .head input{width:28px;height:28px;min-height:0;flex:none;margin:0;accent-color:var(--accent)}
+.sel .head .t{flex:1;min-width:0;font:700 1.08rem/1.25 var(--f-display);overflow-wrap:anywhere}
+.sel .head .t small{display:block;font:500 .8rem var(--f-body);opacity:.85}
+.sel .foot{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:10px 14px}
+.sel.dis .head{opacity:.6;cursor:default}
+.stepper{display:inline-flex;align-items:center;border:1.5px solid var(--line);border-radius:10px;overflow:hidden}
+.stepper button{width:44px;height:44px;border:0;background:var(--bg);color:var(--ink);font:700 1.3rem var(--f-body);cursor:pointer}
+.stepper output{min-width:2.4em;text-align:center;font:700 1.05rem var(--f-mono)}
+.num{width:6.5em}
+.ist input{font-weight:700;border-color:var(--accent)}
+
+/* Schritte */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.steps button{border:1.5px solid var(--line);background:var(--paper);color:var(--muted);border-radius:12px;padding:8px 4px;font:700 .86rem var(--f-body);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:56px}
+.steps button b{font:700 1.1rem var(--f-display)}
+.steps button[aria-current="step"]{border-color:var(--accent);background:var(--accent);color:var(--accent-ink)}
+.stickybar{position:sticky;bottom:calc(var(--navh) + 8px + env(safe-area-inset-bottom,0px));z-index:5}
+
+/* Navigationsleiste */
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--paper);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+.nav .in{max-width:620px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);height:var(--navh)}
+.nav button{position:relative;border:0;background:none;color:var(--muted);font:700 .75rem var(--f-body);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer}
+.nav button svg{width:24px;height:24px}
+.nav button[aria-selected="true"]{color:var(--accent)}
+.nav button[aria-selected="true"]::before{content:"";position:absolute;top:0;left:22%;right:22%;height:3px;border-radius:0 0 3px 3px;background:var(--accent)}
+.badge{position:absolute;top:7px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:#fff;font:700 .7rem/18px var(--f-body)}
+
+/* Blatt (Vollbild-Dialog) */
+.sheet{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column}
+.sheet-head{background:var(--paper);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+.sheet-head .wrap{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-block:10px}
+.sheet-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sheet-body .wrap{display:flex;flex-direction:column;gap:14px;padding-block:16px calc(32px + env(safe-area-inset-bottom,0px))}
+
+/* Hinweis unten */
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 14px + env(safe-area-inset-bottom,0px));z-index:60;width:min(92vw,560px);background:var(--ink);color:var(--paper);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.toast span{flex:1}
+.toast button{background:none;border:1.5px solid var(--paper);color:var(--paper);border-radius:8px;padding:6px 10px;font:700 .9rem var(--f-body);cursor:pointer}
+.confirm{background:var(--bad-soft);color:var(--bad);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 .8rem var(--f-mono);border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:6px 8px;cursor:pointer}
+details.box{background:var(--paper);border:1px solid var(--line);border-radius:14px}
+details.box>summary{cursor:pointer;list-style:none;padding:14px 16px;font:700 1.02rem var(--f-display);display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:52px}
+details.box>summary::-webkit-details-marker{display:none}
+details.box>summary::after{content:"▾";color:var(--muted)}
+details.box[open]>summary::after{content:"▴"}
+details.box>.in{padding:0 16px 16px;display:flex;flex-direction:column;gap:10px}
+input.filein{min-height:58px;padding:8px;border:2px dashed var(--accent);background:var(--accent-soft);color:var(--ink);font-size:16px;cursor:pointer}
+input.filein::file-selector-button{font:700 1rem var(--f-body);background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:10px 14px;margin-right:10px;cursor:pointer}
+.addr{font:500 .95rem var(--f-mono);user-select:all;overflow-wrap:anywhere}
+@media (max-width:380px){.grid2{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <span class="app">Medikamente</span>
+    <button class="personbtn" id="personBtn" data-act="persons" aria-label="Person wechseln"><span id="personName"></span><span aria-hidden="true">▾</span></button>
+  </div>
+</header>
+
+<main>
+  <section class="view" id="v-home"><div class="wrap" id="homeBody"></div></section>
+  <section class="view" id="v-meds" hidden><div class="wrap" id="medsBody"></div></section>
+  <section class="view" id="v-rx" hidden><div class="wrap" id="rxBody"></div></section>
+  <section class="view" id="v-more" hidden><div class="wrap" id="moreBody"></div></section>
+</main>
+
+<nav class="nav" aria-label="Bereiche">
+  <div class="in" role="tablist">
+    <button role="tab" data-view="home" aria-selected="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Übersicht</button>
+    <button role="tab" data-view="meds" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="9" width="18" height="6.5" rx="3.25" transform="rotate(-35 12 12)"/><path d="M9.6 8.6l4.8 6.8"/></svg>Medikamente</button>
+    <button role="tab" data-view="rx" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h3"/></svg>Rezepte<span class="badge" id="rxBadge" hidden></span></button>
+    <button role="tab" data-view="more" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>Mehr</button>
+  </div>
+</nav>
+
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="sheet-head"><div class="wrap"><h2 id="sheetTitle"></h2><button class="btn ghost sm" data-act="sheet-close">Schließen</button></div></div>
+  <div class="sheet-body"><div class="wrap" id="sheetBody"></div></div>
+</div>
+
+<div class="toast" id="toast" hidden role="status"><span id="toastText"></span><button id="toastBtn" hidden></button></div>
+
+<script>
+(function(){
+const FORMS={TABL:"Tabletten",FTBL:"Filmtabletten",KAPS:"Kapseln",HKAP:"Hartkapseln",WKAP:"Weichkapseln",TROP:"Tropfen",SALB:"Salbe",CREM:"Creme",GEL:"Gel",PULV:"Pulver",BTBL:"Brausetabletten",RETA:"Retardtabletten",RKAP:"Retardkapseln",MTAB:"magensaftres. Tabl.",SAFT:"Saft",SPRA:"Spray",PFLA:"Pflaster",INJ:"Injektionslösung",AUGT:"Augentropfen",DOSI:"Dosieraerosol",INHA:"Inhalation",ZTBL:"Zerfallstabletten"};
+const SAMPLES=[
+ {xml:`<MP v="026" U="BEISPIEL1" l="de-DE"><P g="Erika" f="Mustermann" b="19440312"/><A n="Beispielpraxis Dr. Muster" t="2026-09-30"/><S><M a="Ramipril 5 mg" f="TABL" m="1" d="0" v="0" h="0" r="Blutdruck"/><M a="Metformin 1000 mg" f="FTBL" m="1" d="0" v="1" h="0" i="zum Essen" r="Diabetes"/><M a="Simvastatin 20 mg" f="FTBL" m="0" d="0" v="1" h="0" r="Cholesterin"/><M a="ASS 100 mg" f="TABL" m="1" d="0" v="0" h="0"/><M a="Pantoprazol 20 mg" f="MTAB" m="1" d="0" v="0" h="0" i="30 Min. vor dem Frühstück"/></S><S c="418"><M a="Vitamin D3 1000 I.E." f="TABL" m="1" d="0" v="0" h="0"/></S></MP>`,stock:[42,9,61,20,3,80]},
+ {xml:`<MP v="026" U="BEISPIEL2" l="de-DE"><P g="Max" f="Mustermann" b="19410705"/><A n="Beispielpraxis Dr. Muster" t="2026-08-14"/><S><M a="Bisoprolol 2,5 mg" f="TABL" m="1" d="0" v="0" h="0" r="Herz"/><M a="Apixaban 5 mg" f="FTBL" m="1" d="0" v="1" h="0" r="Blutverdünnung"/><M a="Torasemid 10 mg" f="TABL" m="1" d="0" v="0" h="0" r="Wassertabletten"/><M a="Tamsulosin 0,4 mg" f="RKAP" m="0" d="0" v="1" h="0"/></S></MP>`,stock:[55,12,30,8]}
+];
+const $=id=>document.getElementById(id);
+const uid=()=>Math.random().toString(36).slice(2,9);
+function num(v){if(v==null||v==="")return 0;v=String(v).replace(",",".").replace("½","0.5").replace("¼","0.25").replace("¾","0.75");const n=parseFloat(v);return isNaN(n)?0:n}
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+const today=()=>new Date().toLocaleDateString("de-DE");
+
+function parseBMP(xml){
+  const doc=new DOMParser().parseFromString(xml.trim(),"application/xml");
+  if(doc.querySelector("parsererror"))throw new Error("Die Barcode-Daten sind kein gültiger Medikationsplan.");
+  const mp=doc.querySelector("MP");if(!mp)throw new Error("Kein Medikationsplan in den Daten gefunden.");
+  const Pt=mp.querySelector("P"),A=mp.querySelector("A");
+  const patient=Pt?{name:[Pt.getAttribute("g"),Pt.getAttribute("f")].filter(Boolean).join(" "),geb:fmtDate(Pt.getAttribute("b")),praxis:A?.getAttribute("n")||"",praxisMail:A?.getAttribute("e")||"",praxisTel:A?.getAttribute("p")||"",praxisAddr:[A?.getAttribute("s"),[A?.getAttribute("z"),A?.getAttribute("c")].filter(Boolean).join(" ")].filter(Boolean).join(", "),kvnr:Pt.getAttribute("egk")||"",stand:fmtDate(A?.getAttribute("t"))}:null;
+  const meds=[...mp.querySelectorAll("M")].map(m=>{
+    const W=[...m.querySelectorAll("W")];
+    const wirk=W.map(w=>[w.getAttribute("w"),w.getAttribute("s")].filter(Boolean).join(" ")).join(", ");
+    const noName=!m.getAttribute("a")&&!wirk;const name=m.getAttribute("a")||wirk||("PZN "+(m.getAttribute("p")||"?"));
+    return newMed({name,wirkstoff:m.getAttribute("a")?wirk:"",pzn:m.getAttribute("p")||"",form:FORMS[m.getAttribute("f")]||m.getAttribute("fd")||m.getAttribute("f")||"",
+      m:num(m.getAttribute("m")),d:num(m.getAttribute("d")),v:num(m.getAttribute("v")),h:num(m.getAttribute("h")),
+      frei:m.getAttribute("t")||"",hinweis:m.getAttribute("i")||"",grund:m.getAttribute("r")||"",noName,...freiInfo(m.getAttribute("t")||"",m)});
+  });
+  return {patient,meds};
+}
+function fmtDate(s){if(!s)return"";const m=/^(\d{4})-?(\d{2})-?(\d{2})/.exec(s);return m?`${m[3]}.${m[2]}.${m[1]}`:s}
+const RHYTHM={d1:[1,"täglich"],d2:[1/2,"jeden 2. Tag"],w1:[1/7,"1× pro Woche"],w2:[2/7,"2× pro Woche"],w3:[3/7,"3× pro Woche"]};
+const UNITS=["Stück","I.E.","ml","Hub","Tropfen","Beutel"];
+const unitShort=m=>({"Stück":"St.","Tropfen":"Tr."})[m.einheit||"Stück"]||m.einheit;
+function freiInfo(t,el){const o={};const w=/(\d)\s*x\s*(wtl|w[öo]ch)/i.exec(t);
+  if(w&&RHYTHM["w"+w[1]]){o.rhythm="w"+w[1];if(!["m","d","v","h"].some(k=>num(el.getAttribute(k))))o.m=1}
+  if(/\d+\s*I\.?\s*E/i.test(t))o.einheit="I.E.";return o}
+function newMed(o){return Object.assign({id:uid(),name:"",wirkstoff:"",pzn:"",form:"",m:0,d:0,v:0,h:0,frei:"",rhythm:"d1",einheit:"Stück",handel:"",hinweis:"",grund:"",packung:100,bestand:"",order:false,menge:1,lastOrder:""},o)}
+/* Freitext lesen (auch fehlerhafte OCR-Ausgabe) */
+function cleanOCRLine(l){
+  return l.replace(/[–—−~_]/g,"-").replace(/\s*-\s*/g,"-")
+    // typische Lesefehler in Dosierungen: O->0, l/I/|->1, S->5 (nur zwischen Bindestrichen)
+    .replace(/(^|[\s-])([OoDQ])(?=-|\s|$)/g,"$10").replace(/(^|[\s-])([lI|!i])(?=-|\s|$)/g,"$11")
+    .replace(/(\d)-([OoQ])\b/g,"$1-0").replace(/\b([OoQ])-(\d)/g,"0-$2")
+    .replace(/1\/2/g,"½").replace(/1\/4/g,"¼").replace(/3\/4/g,"¾")
+    .replace(/\s{2,}/g," ").trim();
+}
+function parseText(t){
+  if(/<MP[\s>]/.test(t))return parseBMP(t.slice(t.indexOf("<MP")));
+  const meds=[],F="(\\d+(?:[.,]\\d+)?|½|¼|¾)";
+  const reDash=new RegExp(`${F}-${F}-${F}(?:-${F})?(?![\\d.,])`);
+  const reCols=new RegExp(`(?:mg|µg|ug|mcg|I\\.?E\\.?|ml|g|%|Tabl\\w*|Kaps\\w*|St\\w*)\\b.*?(?:^|\\s)${F}\\s+${F}\\s+${F}\\s+${F}(?=\\s|$)`,"i");
+  const skip=/^(morgens|wirkstoff|handelsname|medikationsplan|seite|f[üu]r:|ausgedruckt|geb\.|hinweis)/i;
+  t.split(/\n+/).forEach(raw=>{
+    const line=cleanOCRLine(raw);if(line.length<5||skip.test(line))return;
+    let r=reDash.exec(line),start,end,d;
+    if(r){start=r.index;end=r.index+r[0].length;d=[r[1],r[2],r[3],r[4]]}
+    else{const c=reCols.exec(line);if(!c)return;const seq=c[0].match(new RegExp(`${F}\\s+${F}\\s+${F}\\s+${F}$`));start=c.index+c[0].length-seq[0].length;end=c.index+c[0].length;d=[seq[1],seq[2],seq[3],seq[4]]}
+    if(d.slice(0,4).some(x=>x&&num(x)>10))return;
+    let name=line.slice(0,start).replace(/[|[\]{}]/g," ").replace(/\s{2,}/g," ").trim();
+    if(!name||!/[A-Za-zÄÖÜäöü]{3}/.test(name))return;
+    const fm=Object.values(FORMS).sort((x,y)=>y.length-x.length).find(v=>new RegExp(v.split(" ")[0].replace(".",""),"i").test(name));
+    meds.push(newMed({name,form:fm||"",m:num(d[0]),d:num(d[1]),v:num(d[2]),h:num(d[3]),hinweis:line.slice(end).replace(/^[\s.,;:-]+/,"").trim()}));
+  });
+  if(!meds.length){tableRows(t).forEach(r=>meds.push(newMed({name:r.name,form:r.form,m:r.dose?num(r.dose[0]):0,d:r.dose?num(r.dose[1]):0,v:r.dose?num(r.dose[2]):0,h:r.dose?num(r.dose[3]):0,hinweis:"Dosierung prüfen",check:true})))}
+  if(!meds.length)throw new Error("Keine Dosierungszeilen gefunden. Erwartet wird z. B. „Ramipril 5 mg 1-0-0-0“.");
+  return {patient:null,meds};
+}
+const tick=()=>new Promise(r=>setTimeout(r,0));
+function lumOf(c){const px=c.getContext("2d").getImageData(0,0,c.width,c.height).data,l=new Uint8ClampedArray(c.width*c.height);for(let i=0,j=0;i<px.length;i+=4,j++)l[j]=(px[i]*299+px[i+1]*587+px[i+2]*114)/1000;return l}
+function tryDecode(c){
+  const Z=window.ZXing,hints=new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.DATA_MATRIX]);hints.set(Z.DecodeHintType.TRY_HARDER,true);
+  const reader=new Z.MultiFormatReader();reader.setHints(hints);const lum=lumOf(c);
+  for(const Bin of [Z.HybridBinarizer,Z.GlobalHistogramBinarizer]){try{return reader.decode(new Z.BinaryBitmap(new Bin(new Z.RGBLuminanceSource(lum,c.width,c.height)))).getText()}catch(e){}}
+  return null;
+}
+function sized(src,max){const sc=Math.min(1,max/Math.max(src.width,src.height)),c=document.createElement("canvas");c.width=Math.round(src.width*sc);c.height=Math.round(src.height*sc);const x=c.getContext("2d");x.imageSmoothingQuality="high";x.drawImage(src,0,0,c.width,c.height);return c}
+function rotated(src,deg){if(!deg)return src;const c=document.createElement("canvas"),q=deg%180!==0;c.width=q?src.height:src.width;c.height=q?src.width:src.height;const x=c.getContext("2d");x.translate(c.width/2,c.height/2);x.rotate(deg*Math.PI/180);x.drawImage(src,-src.width/2,-src.height/2);return c}
+function cornerCrop(src,x,y,s){const pad=Math.round(s*.08),c=document.createElement("canvas");c.width=c.height=s+2*pad;const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(src,x,y,s,s,pad,pad,s,s);return sized(c,900)}
+async function findBarcode(canvas){
+  if(!window.ZXing)throw new Error("Barcode-Bibliothek nicht geladen.");
+  for(const m of [1600,1100]){const t=tryDecode(sized(canvas,m));if(t)return t}
+  // Barcode sitzt beim BMP in einer Ecke; bei gedrehten Scans in irgendeiner
+  const W=canvas.width,H=canvas.height;
+  for(const f of [0.3,0.4,0.22]){const s=Math.round(Math.min(W,H)*f);
+    for(const [x,y] of [[W-s,0],[0,0],[0,H-s],[W-s,H-s]]){const base=cornerCrop(canvas,x,y,s);
+      for(const r of [0,90,180,270]){const t=tryDecode(rotated(base,r));if(t)return t}await tick()}}
+  return null;
+}
+
+/* Texterkennung (OCR) */
+function enhance(canvas){
+  const scale=Math.max(1,Math.min(3,2500/canvas.width)),w=Math.round(canvas.width*scale),h=Math.round(canvas.height*scale);
+  const c=document.createElement("canvas");c.width=w;c.height=h;const ctx=c.getContext("2d");
+  ctx.imageSmoothingQuality="high";ctx.drawImage(canvas,0,0,w,h);
+  const im=ctx.getImageData(0,0,w,h),px=im.data,g=new Uint8ClampedArray(w*h),hist=new Array(256).fill(0);
+  for(let i=0,j=0;i<px.length;i+=4,j++){g[j]=(px[i]*299+px[i+1]*587+px[i+2]*114)/1000;hist[g[j]]++}
+  let lo=0,hi=255,acc=0,n=w*h;while(acc<n*.01&&lo<255)acc+=hist[lo++];acc=0;while(acc<n*.01&&hi>0)acc+=hist[hi--];
+  const span=Math.max(1,hi-lo);
+  for(let i=0,j=0;i<px.length;i+=4,j++){const v=Math.max(0,Math.min(255,(g[j]-lo)*255/span));px[i]=px[i+1]=px[i+2]=v;px[i+3]=255}
+  ctx.putImageData(im,0,0);return c;
+}
+let ocrWorker=null,ocrLabel="";
+async function getOCR(){
+  if(ocrWorker)return ocrWorker;
+  if(!window.Tesseract)throw new Error("OCR-Bibliothek nicht geladen.");
+  const logger=m=>{if(m.status==="recognizing text"&&ocrLabel)setStatus(`${ocrLabel}: ${Math.round(m.progress*100)} %`)};
+  const tryCreate=o=>Promise.race([Tesseract.createWorker("deu",1,Object.assign({logger},o)),new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),45000))]);
+  const abs=x=>new URL(x,location.href).href;
+  try{ocrWorker=await tryCreate({workerPath:abs("vendor/worker.min.js"),corePath:abs("vendor/core"),langPath:abs("vendor/lang"),gzip:true,workerBlobURL:false})}
+  catch(e){ocrWorker=await tryCreate({})}
+  await ocrWorker.setParameters({tessedit_pageseg_mode:"6",preserve_interword_spaces:"1"});
+  return ocrWorker;
+}
+/* Tabellenzeilen des BMP aus erkanntem Text */
+const FORMWORD=/^(film)?tabletten$|^(hart|weich)?kapseln$|^fertigpen$|^tabl$|^tropfen$/i;
+const FORMMAP=[[/tabl|tap|tag/i,"Tabletten"],[/kaps/i,"Kapseln"],[/inj/i,"Injektionslösung"],[/tropf/i,"Tropfen"],[/salbe/i,"Salbe"],[/pflast/i,"Pflaster"],[/spray/i,"Spray"],[/btl|beutel/i,"Beutel"]];
+function tableRows(text){
+  const L=text.split(/\n/);let a=L.findIndex(l=>/Wirkstoff|Handelsname/i.test(l));if(a<0)a=-1;
+  let b=L.findIndex((l,i)=>i>a&&/Vollst[äa]ndigkeit|Gew[äa]hr|de-DE Version/i.test(l));if(b<0)b=L.length;
+  const rows=[];
+  for(const raw of L.slice(a+1,b)){
+    const line=raw.replace(/[|\[\]{}]/g," ").replace(/\s{2,}/g," ").trim();
+    const toks=line.split(" ").map(t=>t.replace(/^[^A-Za-zÄÖÜäöü0-9]+/,"").replace(/^[a-z]{1,2}[^A-Za-z]+(?=[A-ZÄÖÜ])/,""));let i=toks.findIndex(t=>(/^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]{3,}$/.test(t)||/^[A-ZÄÖÜ]{3}$/.test(t))&&!FORMWORD.test(t));
+    if(i<0)continue;
+    let name=toks[i];if(toks[i+1]&&/^[a-zäöüß]{4,}$/.test(toks[i+1]))name+=" "+toks[i+1];
+    if(/^[A-ZÄÖÜ]{4,}$/.test(name))name=name[0]+name.slice(1).toLowerCase();
+    const after=line.slice(line.indexOf(toks[i])+toks[i].length);const st=/(\d+(?:[.,]\d+)?)\s?(mg|µg|mcg|ml|g|I\.?E\.?)(?![a-z])/i.exec(after);
+    const fm=/\b(Tabl\w*|Tap\w*|Tag|Kaps\w*|Kapsel\w*|Injekt\w*|Tropf\w*|Salbe|Pflaster|Spray|Btl|Beutel)\b/i.exec(line);
+    if(!st&&!fm)continue;
+    const strength=st?`${st[1].replace(".",",")} ${st[2].toLowerCase().replace(/^i\.?e\.?$/,"I.E.")}`:"";
+    let dose=null;if(fm){const rest=line.slice(fm.index+fm[0].length).replace(/[^0-9,.½ ]/g," ").trim().split(/\s+/).filter(x=>/^(\d([.,]5)?|½)$/.test(x));if(rest.length===4)dose=rest}
+    rows.push({name:(name+(strength?" "+strength:"")).trim(),form:fm?(FORMMAP.find(([r])=>r.test(fm[1]))||[,""])[1]:"",dose});
+  }
+  return rows;
+}
+
+/* BMP-Tabelle spaltenweise lesen; ocr(x0,y0,x1,y1,mode) liefert [{t,y,c}] in Bildkoordinaten */
+const DRUGS="Acetylsalicylsäure|Aciclovir|Alendronsäure|Allopurinol|Alprazolam|Amantadin|Amiodaron|Amitriptylin|Amlodipin|Amoxicillin|Anastrozol|Apixaban|Aripiprazol|Atenolol|Atorvastatin|Azathioprin|Azithromycin|Baclofen|Bisoprolol|Brimonidin|Budesonid|Bupropion|Calcitriol|Calcium|Candesartan|Captopril|Carbamazepin|Carbidopa|Carvedilol|Cefuroxim|Cetirizin|Chlortalidon|Ciprofloxacin|Citalopram|Clarithromycin|Clonazepam|Clopidogrel|Colecalciferol|Cotrimoxazol|Dabigatran|Dapagliflozin|Denosumab|Dexamethason|Diazepam|Diclofenac|Digitoxin|Digoxin|Diltiazem|Dimenhydrinat|Domperidon|Donepezil|Doxazosin|Doxycyclin|Dulaglutid|Duloxetin|Edoxaban|Empagliflozin|Enalapril|Entresto|Eplerenon|Escitalopram|Esomeprazol|Ezetimib|Febuxostat|Felodipin|Fentanyl|Finasterid|Fluoxetin|Folsäure|Formoterol|Furosemid|Gabapentin|Glibenclamid|Glimepirid|Haloperidol|Hydrochlorothiazid|Hydrocortison|Hydromorphon|Ibandronsäure|Ibuprofen|Indapamid|Insulin aspart|Insulin degludec|Insulin detemir|Insulin glargin|Insulin glulisin|Insulin human|Insulin lispro|Ipratropiumbromid|Irbesartan|Isosorbiddinitrat|Isosorbidmononitrat|Ivabradin|Kaliumchlorid|Lamotrigin|Lansoprazol|Latanoprost|Lercanidipin|Letrozol|Levetiracetam|Levodopa|Levofloxacin|Levothyroxin|Linagliptin|Liraglutid|Lisinopril|Lorazepam|Losartan|Macrogol|Magnesium|Melperon|Memantin|Metamizol|Metformin|Methotrexat|Methylphenidat|Metoclopramid|Metoprolol|Mirtazapin|Molsidomin|Montelukast|Morphin|Moxonidin|Mirabegron|Naproxen|Nebivolol|Nifedipin|Nitrendipin|Nitroglycerin|Novaminsulfon|Olanzapin|Olmesartan|Omeprazol|Ondansetron|Oxycodon|Pantoprazol|Paracetamol|Paroxetin|Phenprocoumon|Pipamperon|Piretanid|Pramipexol|Pravastatin|Prednisolon|Pregabalin|Promethazin|Propranolol|Quetiapin|Ramipril|Ranolazin|Rasagilin|Risperidon|Rivaroxaban|Ropinirol|Rosuvastatin|Sacubitril|Salbutamol|Semaglutid|Sertralin|Sildenafil|Simvastatin|Sitagliptin|Solifenacin|Sotalol|Spironolacton|Tamoxifen|Tamsulosin|Tapentadol|Telmisartan|Terazosin|Thiamazol|Tiotropiumbromid|Tilidin|Timolol|Tolterodin|Torasemid|Tramadol|Trospiumchlorid|Valproinsäure|Valsartan|Venlafaxin|Verapamil|Vildagliptin|Xipamid|Zolpidem|Zopiclon|Cabergolin|Bromocriptin|Allopurinol|Colchicin|Hydroxychloroquin|Leflunomid|Mesalazin|Prednison|Risedronsäure|Strontium|Tiaprid|Trimipramin|Doxepin|Opipramol|Lithium|Pramipexol|Rotigotin|Entacapon|Selegilin|Biperiden|Galantamin|Rivastigmin|Ticagrelor|Prasugrel|Nitrofurantoin|Fosfomycin|Ambroxol|Acetylcystein|Beclometason|Fluticason|Mometason|Tiotropium|Umeclidinium|Vilanterol|Glycopyrronium|Theophyllin|Roflumilast|Betahistin|Cinnarizin|Hydroxyzin|Loratadin|Desloratadin|Fexofenadin|Ranitidin|Famotidin|Sucralfat|Loperamid|Butylscopolamin|Bisacodyl|Natriumpicosulfat|Lactulose|Eisen|Cyanocobalamin|Kalium|Zink".split("|");
+function lev(a,b){const m=a.length,n=b.length;if(!m)return n;if(!n)return m;let p=Array.from({length:n+1},(_,i)=>i);for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
+const DRUGKEY=DRUGS.map(d=>[d,d.toLowerCase().replace(/[^a-zäöüß]/g,"")]);
+function fuzzyDrug(raw){
+  if(!raw)return null;
+  const s=raw.toLowerCase().replace(/[^a-zäöüß ]/g," ").replace(/\s+/g," ").trim();if(!s)return null;
+  const cands=new Set([s.replace(/ /g,"")]);s.split(" ").forEach((w,i,a)=>{if(w.length>=5)cands.add(w);if(a[i+1])cands.add(w+a[i+1])});
+  let best=null;
+  for(const c of cands){if(c.length<4)continue;for(const [d,k] of DRUGKEY){const sc=lev(c,k)/Math.max(c.length,k.length);if(!best||sc<best.sc)best={d,sc}}}
+  return best&&best.sc<=0.34?best.d:null;
+}
+const UNIT=/(\d+(?:[.,]\d+)?)\s?(mg|ma|mc|m9|rng|µg|ug|mcg|I?E\/ml|I\.?E\.?|ml|g)(?![a-z])/i;
+function strengthOf(t){const m=UNIT.exec(t||"");if(!m)return "";let u=m[2].toLowerCase();
+  if(/^(mg|ma|mc|m9|rng)$/.test(u))u="mg";else if(/e\/ml/.test(u))u="E/ml";else if(/^i\.?e\.?$/.test(u))u="I.E.";else if(u==="ug"||u==="mcg")u="µg";
+  return `${m[1].replace(".",",")} ${u}`}
+const FORMMAP2=[[/tabl|tap|tag/i,"Tabletten"],[/kaps/i,"Kapseln"],[/inj/i,"Injektionslösung"],[/tropf/i,"Tropfen"],[/salbe/i,"Salbe"],[/creme/i,"Creme"],[/pflast/i,"Pflaster"],[/spray/i,"Spray"],[/btl|beutel/i,"Beutel"],[/inhal|pulver/i,"Inhalation"],[/saft|lsg|l[öo]s/i,"Lösung"]];
+function findHeader(words){
+  const f=re=>words.find(w=>re.test(w.text));
+  const h={W:f(/^\W?Wirkstoff/i),H:f(/^\W?Handels/i),S:f(/^\W?St.?rke/i),F:f(/^\W?Form\W?$/i),E:f(/Einheit/i),B:f(/Vollst/i)};
+  if(!h.H||!h.F)return null;return h;
+}
+function nearest(anchors,y,half){let bi=-1,bd=1e9;anchors.forEach((a,i)=>{const d=Math.abs(a-y);if(d<bd){bd=d;bi=i}});return bd<=half?bi:-1}
+async function readTable(ocr,words,H,withDoses){
+  const h=findHeader(words);if(!h)return null;
+  const B=h.F.bbox,top=Math.max(...["W","H","S","F"].filter(k=>h[k]).map(k=>h[k].bbox.y1))+2,bot=h.B?h.B.bbox.y0-10:H;
+  const xH=h.H.bbox.x0-6,xS=h.S?h.S.bbox.x0-6:B.x0-6,xF=B.x0-6,xFe=B.x1+Math.round((B.x1-B.x0)*.5);
+  const xW=h.W?h.W.bbox.x0-15:Math.max(0,xH-(xS-xH));
+  const forms=(await ocr(xF,top,xFe,bot,"text")).filter(l=>/[A-Za-z]{3}/.test(l.t));
+  if(!forms.length)return null;
+  const ys=forms.map(l=>l.y),gap=Math.min(...ys.slice(1).map((y,i)=>y-ys[i]).concat([120])),half=Math.max(30,gap*.6);
+  const rows=forms.map(l=>({form:l.t,wirk:[],handel:[],staerke:[],y:l.y}));
+  for(const [k,x0,x1] of [["wirk",xW,xH],["handel",xH,xS],["staerke",xS,xF]]){if(x1-x0<20)continue;
+    for(const l of await ocr(x0,top,x1,bot,"text")){const i=nearest(ys,l.y,half);if(i>=0&&l.t)rows[i][k].push(l.t)}}
+  if(withDoses){const a=xFe,b=h.E?h.E.bbox.x0-6:a+(B.x1-B.x0)*3,cw=(b-a)/4;
+    for(const r of rows){r.dose=[];for(let k=0;k<4;k++){const c=await ocr(Math.round(a+k*cw)+3,Math.round(r.y-half*.45),Math.round(a+(k+1)*cw)-3,Math.round(r.y+half*.45),"digit");r.dose.push((c[0]&&c[0].t)||"")}}}
+  return rows.map(r=>{
+    const wirkRaw=r.wirk.join(" "),handel=r.handel.join(" ").replace(/\s{2,}/g," ").replace(/[|_]/g,"").trim();
+    const strength=strengthOf(r.handel[0])||strengthOf(handel)||strengthOf(r.staerke.join(" "));
+    let wirk=fuzzyDrug(wirkRaw),sure=!!wirk;
+    if(!wirk){const brand=(r.handel[0]||"").replace(UNIT,"").replace(/\b(Film)?tabletten\b.*$/i,"").replace(/[^A-Za-zÄÖÜäöüß \-]/g," ").trim().split(/\s+/)[0]||"";
+      wirk=fuzzyDrug(brand)||(brand.length>=4?(/^[A-ZÄÖÜ]+$/.test(brand)?brand[0]+brand.slice(1).toLowerCase():brand):wirkRaw.replace(/[^A-Za-zÄÖÜäöüß \-]/g,"").trim())}
+    const form=(FORMMAP2.find(([re])=>re.test(r.form))||[,""])[1];
+    let dose=null,doseSure=true;
+    if(r.dose){dose=r.dose.map(d=>{let v=d.replace(/[^0-9,]/g,"");if(v==="4"){doseSure=false;v="1"}if(v===""||v===",")return 0;if(/^[5-9]$/.test(v))doseSure=false;if(/^0,?5$|^05$/.test(v))return 0.5;const n=parseFloat(v.replace(",","."));if(isNaN(n)||n>10){doseSure=false;return 0}return n})}
+    return {name:(wirk+(strength?" "+strength:"")).trim(),wirk,handel,form,sure,dose,doseSure};
+  }).filter(r=>r.name);
+}
+
+/* OCR einer Seite: Ausrichtung, Volltext, Tabelle spaltenweise */
+async function ocrDocument(canvases,withDoses){
+  setStatus("Starte Texterkennung (beim ersten Mal etwas länger) …");
+  let w;try{w=await getOCR()}catch(e){ocrWorker=null;throw new Error("Die Texterkennung ließ sich nicht starten. Bitte die Internetverbindung prüfen oder unten den Text einfügen.")}
+  let text="",rows=[];
+  for(let i=0;i<canvases.length;i++){
+    const pg=canvases.length>1?` (Seite ${i+1}/${canvases.length})`:"";
+    let best={conf:-1,rot:0};ocrLabel="";
+    await w.setParameters({tessedit_pageseg_mode:"6",tessedit_char_whitelist:""});
+    for(const r of [0,270,90,180]){setStatus(`Prüfe Ausrichtung${pg} …`);
+      const {data}=await w.recognize(rotated(sized(canvases[i],1000),r));
+      if(data.confidence>best.conf)best={conf:data.confidence,rot:r};if(data.confidence>=70)break}
+    const enh=enhance(rotated(canvases[i],best.rot));
+    ocrLabel="Texterkennung"+pg;const {data}=await w.recognize(enh);text+=data.text+"\n";ocrLabel="";
+    setStatus(`Lese Tabelle spaltenweise${pg} …`);
+    const sc=Math.max(1,2.2*2338/enh.width);
+    const ocr=async(x0,y0,x1,y1,mode)=>{
+      x0=Math.max(0,Math.round(x0));y0=Math.max(0,Math.round(y0));x1=Math.min(enh.width,Math.round(x1));y1=Math.min(enh.height,Math.round(y1));
+      if(x1-x0<10||y1-y0<10)return [];
+      const c=document.createElement("canvas");c.width=Math.round((x1-x0)*sc);c.height=Math.round((y1-y0)*sc);
+      const g=c.getContext("2d");g.imageSmoothingQuality="high";g.drawImage(enh,x0,y0,x1-x0,y1-y0,0,0,c.width,c.height);
+      await w.setParameters(mode==="digit"?{tessedit_pageseg_mode:"7",tessedit_char_whitelist:"0123456789,"}:{tessedit_pageseg_mode:"6",tessedit_char_whitelist:""});
+      const {data}=await w.recognize(c);
+      return (data.lines||[]).map(l=>({t:l.text.trim(),y:y0+(l.bbox.y0+l.bbox.y1)/2/sc,c:l.confidence}));
+    };
+    try{const r=await readTable(ocr,data.words||[],enh.height,withDoses);if(r)rows.push(...r)}catch(e){console.warn(e)}
+    await w.setParameters({tessedit_pageseg_mode:"6",tessedit_char_whitelist:""});
+  }
+  return {text,rows};
+}
+function fillNames(plan,rows){
+  const unnamed=plan.meds.filter(m=>m.noName);if(!unnamed.length)return "ok";
+  if(rows.length===plan.meds.length){plan.meds.forEach((m,i)=>{if(m.noName){m.name=rows[i].name;m.form=m.form||rows[i].form||"";m.handel=rows[i].handel||"";m.noName=false;m.check=rows[i].sure===undefined?true:!rows[i].sure}});return plan.meds.some(m=>m.check)?"ocr":"ocrsure"}
+  plan.suggest=rows.map(r=>r.name);return "mismatch";
+}
+
+async function handleFile(f){
+  if(!f)return;setStatus("Lese "+f.name+" …");
+  try{
+    let canvases=[],pdfText="";
+    if(f.type==="application/pdf"||/\.pdf$/i.test(f.name)){
+      if(!window.pdfjsLib)throw new Error("PDF-Leser nicht geladen.");
+      const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;
+      for(let i=1;i<=Math.min(pdf.numPages,4);i++){
+        const pg=await pdf.getPage(i),v1=pg.getViewport({scale:1}),vp=pg.getViewport({scale:Math.min(3,2600/Math.max(v1.width,v1.height))});
+        const c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;
+        const ctx=c.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,c.width,c.height);
+        await pg.render({canvasContext:ctx,viewport:vp}).promise;canvases.push(c);
+        const tc=await pg.getTextContent();
+        let lastY=null;tc.items.forEach(it=>{const y=Math.round(it.transform[5]);pdfText+=(lastY!==null&&Math.abs(y-lastY)>3?"\n":" ")+it.str;lastY=y});pdfText+="\n";
+      }
+    }else{
+      const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error("Bild konnte nicht geöffnet werden."));const u=URL.createObjectURL(f);blobUrls.push(u);i.src=u});
+      const c=document.createElement("canvas");c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext("2d").drawImage(img,0,0);canvases.push(c);blobUrls.forEach(u=>URL.revokeObjectURL(u));blobUrls=[];
+    }
+    setStatus("Suche Barcode …");await tick();
+    const parts=[];for(const c of canvases){const t=await findBarcode(c);if(t)parts.push(t)}
+    const xml=parts.find(p=>/<MP/.test(p));
+    if(xml){
+      const plan=parseBMP(xml);
+      parts.filter(p=>p!==xml).forEach(p=>{try{plan.meds.push(...parseBMP(p).meds)}catch(e){}});
+      plan.meds.forEach(m=>{if(m.noName&&S.pzn[m.pzn]){m.name=S.pzn[m.pzn].name;m.form=m.form||S.pzn[m.pzn].form||"";m.handel=S.pzn[m.pzn].handel||"";m.noName=false}});
+      let how="ok";
+      if(plan.meds.some(m=>m.noName)){
+        let rows=pdfText.trim()?tableRows(pdfText):[];
+        if(rows.length!==plan.meds.length){try{const r=await ocrDocument(canvases,false);offerText(r.text);rows=r.rows.length===plan.meds.length?r.rows:tableRows(r.text)}catch(e){rows=[];how="noocr"}}
+        if(how!=="noocr")how=fillNames(plan,rows);
+      }
+      plan.meds.forEach(m=>{if(m.pzn&&!m.noName&&!m.check)S.pzn[m.pzn]={name:m.name,form:m.form,handel:m.handel||""}});
+      const n=plan.meds.length;
+      const msg={ok:[`${n} Medikamente aus dem Barcode übernommen.`,""],
+        ocrsure:[`${n} Medikamente aus dem Barcode übernommen. Die Namen stammen aus dem Ausdruck und wurden mit der Wirkstoffliste abgeglichen.`,""],
+        ocr:[`${n} Medikamente aus dem Barcode übernommen. Der Barcode enthält nur PZN und Dosierung, die Namen wurden per Texterkennung ergänzt. Bitte die markierten Namen prüfen.`,"warn"],
+        mismatch:[`${n} Medikamente aus dem Barcode übernommen. Die Namen ließen sich nicht sicher zuordnen. Bitte die markierten Medikamente antippen und den Namen eintragen, Vorschläge erscheinen beim Tippen.`,"warn"],
+        noocr:[`${n} Medikamente aus dem Barcode übernommen. Der Barcode enthält nur PZN und Dosierung. Bitte die markierten Medikamente antippen und den Namen eintragen.`,"warn"]}[how];
+      setStatus(msg[0],msg[1]);applyPlan(plan);return;
+    }
+    if(pdfText.trim()){
+      try{const plan=parseText(pdfText);setStatus(`Kein Barcode gefunden. ${plan.meds.length} Medikamente aus dem PDF-Text erkannt, bitte prüfen.`,"warn");applyPlan(plan);return}catch(e){}
+    }
+    const res=await ocrDocument(canvases,true),txt=res.text;
+    if(res.rows.length){offerText(txt);
+      const plan={patient:null,meds:res.rows.map(r=>newMed({name:r.name,form:r.form,handel:r.handel,m:r.dose?r.dose[0]:0,d:r.dose?r.dose[1]:0,v:r.dose?r.dose[2]:0,h:r.dose?r.dose[3]:0,check:!r.sure,doseCheck:true}))};
+      setStatus(`Kein Barcode lesbar. Per Texterkennung ${plan.meds.length} Medikamente aus der Tabelle gelesen. Die Namen sind meist zuverlässig, die Dosierung bitte bei jedem Medikament mit dem Ausdruck vergleichen.`,"warn");
+      applyPlan(plan);return}
+    if(!txt.trim()){setStatus("Auf dem Dokument wurde kein Text erkannt. Bitte ein schärferes Foto oder einen besseren Scan verwenden.","err");return}
+    offerText(txt);
+    try{const plan=parseText(txt);plan.meds.forEach(m=>m.check=true);
+      setStatus(`Kein Barcode gefunden. Per Texterkennung ${plan.meds.length} Medikamente gelesen. Bitte Namen und vor allem die Dosierung prüfen.`,"warn");applyPlan(plan);
+    }catch(e){setStatus("Text wurde erkannt, aber keine Medikamentenzeilen gefunden. Der erkannte Text steht unten im Textfeld: bitte korrigieren und „Text übernehmen“ wählen.","err")}
+  }catch(e){setStatus(e.message,"err")}
+}
+function daily(m){return (m.m+m.d+m.v+m.h)*((RHYTHM[m.rhythm]||RHYTHM.d1)[0])}
+function reach(m){const d=daily(m),b=num(m.bestand);if(!d||m.bestand===""||m.bestand==null)return null;return Math.floor(b/d)}
+function reachPill(m){const r=reach(m);if(r===null)return '<span class="pill">Vorrat ?</span>';
+  const until=new Date(Date.now()+r*864e5).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"});
+  const cls=r<=3?"out":r<S.threshold?"low":"";return `<span class="pill ${cls}">${r} Tage · bis ${until}</span>`}
+const doseStr=m=>[m.m,m.d,m.v,m.h].map(x=>String(x).replace(".5","½").replace("0½","½")).join("-");
+const doseLabel=m=>{const r=m.rhythm&&m.rhythm!=="d1"?" · "+RHYTHM[m.rhythm][1]:"";const sum=m.m+m.d+m.v+m.h;return (sum?doseStr(m)+(m.einheit&&m.einheit!=="Stück"?" "+m.einheit:"")+r:(m.frei||"keine Dosierung")+(m.frei?"":r))};
+function setDose(m,v){const before=doseLabel(m);Object.assign(m,v);m.doseCheck=false;const after=doseLabel(m);if(before!==after)m.doseHist={date:today(),old:before}}
+function doseBox(m){const sum=m.m+m.d+m.v+m.h,f=x=>String(x).replace(".5","½").replace(/^0½$/,"½").replace(".",",");
+  if(!sum)return `<div class="small" style="font-weight:700">${esc(m.frei||"keine feste Dosierung")}</div>`;
+  const r=m.rhythm&&m.rhythm!=="d1"?`<div class="small" style="font-weight:700">${esc(RHYTHM[m.rhythm][1])}</div>`:"";
+  return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="dgrid" aria-label="Dosierung ${esc(doseStr(m))}">${["mo","mi","ab","na"].map((l,i)=>{const v=[m.m,m.d,m.v,m.h][i];return `<div><span>${l}</span><b class="${v?"":"z"}">${f(v)}</b></div>`}).join("")}</div>${m.einheit&&m.einheit!=="Stück"?`<span class="small">${esc(m.einheit)}</span>`:""}${r}</div>`}
+const b64=u8=>{let s="";u8.forEach(c=>s+=String.fromCharCode(c));return btoa(s)},unb64=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
+async function deriveKey(pw,salt){const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:250000,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["encrypt","decrypt"])}
+async function makeBackup(pw){if(!window.crypto?.subtle)throw new Error("Verschlüsselung ist in diesem Browser nicht verfügbar.");
+  const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+  const data=new TextEncoder().encode(JSON.stringify({v:1,created:new Date().toISOString(),S}));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},await deriveKey(pw,salt),data));
+  return "MEDPLAN1:"+b64(salt)+"."+b64(iv)+"."+b64(ct)}
+async function readBackup(txt,pw){txt=(txt||"").trim().replace(/\s+/g,"");const m=/^MEDPLAN1:([^.]+)\.([^.]+)\.(.+)$/.exec(txt);
+  if(!m)throw new Error("Das ist keine Sicherung dieser App. Sie beginnt mit „MEDPLAN1:“.");
+  let plain;try{plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(m[2])},await deriveKey(pw,unb64(m[1])),unb64(m[3]))}
+  catch(e){throw new Error("Das Passwort stimmt nicht, oder die Sicherung ist beschädigt.")}
+  const o=JSON.parse(new TextDecoder().decode(plain));if(!o.S||!Array.isArray(o.S.persons))throw new Error("Die Sicherung enthält keine gültigen Daten.");return o}
+function brandOf(m){const first=(m.name||"").split(/\s+/)[0].toLowerCase();let b=(m.handel||"").replace(/\s*(Film|Hart|Weich)?(tabletten|kapseln).*$/i,"").replace(UNIT,"").replace(/\([^)]*\)/g," ").replace(/[^A-Za-zÄÖÜäöüß0-9 \-]/g," ").replace(/\s{2,}/g," ").trim();if(first&&b.toLowerCase().startsWith(first))b=b.slice(first.length).trim();return /[A-Za-zÄÖÜ]{3}/.test(b)&&b.toLowerCase()!==(m.name||"").toLowerCase()?b:""}
+function line(m){const unit=m.einheit&&m.einheit!=="Stück"?m.einheit:"Stück";
+  return `${m.name}${m.form?" "+m.form:""}\n  ${m.menge} ${m.menge==1?"Packung":"Packungen"} à ${m.packung} ${unit}`}
+const TPL_DOC=`Betreff: Rezept für %Patient% (geb. %Geburtsdatum%)
+
+Hallo liebes Praxisteam von %Praxis%,
+
+für %Patient% (geb. %Geburtsdatum%, Versichertennummer %Versichertennummer%) bitte folgende Medikamente auf die Karte speichern:
+
+%Medikamente%
+
+Herzliche Grüße
+%Absender%
+Tel. %Telefon%`;
+const TPL_KEYS=["Patient","Geburtsdatum","Versichertennummer","Praxis","Apotheke","Medikamente","Absender","Telefon","Datum"];
+function fillTpl(tpl,v){
+  let t=tpl.replace(/%([A-Za-zÄÖÜäöü]+)%/g,(m,k)=>k in v?v[k]:m);
+  // Reste leerer Angaben aufräumen
+  t=t.replace(/geb\.\s*(?=[,)])/g,"").replace(/,?\s*Versichertennummer\s*(?=[,)])/g,"").replace(/\(\s*,\s*/g,"(").replace(/\s*\(\s*\)/g,"")
+     .replace(/ von\s*,/g,",").replace(/Apotheke\s+eingelöst/g,"Apotheke eingelöst").replace(/ in der Apotheke\s*(?=[ .])/g," in der Apotheke")
+     .replace(/^(Tel\.|Telefon:?)\s*$/gm,"").replace(/[ \t]+$/gm,"").replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"");
+  return t;
+}
+function mailto(to,text){const [subj,...body]=text.split("\n\n");return `mailto:${encodeURIComponent(to||"")}?subject=${encodeURIComponent(subj.replace("Betreff: ",""))}&body=${encodeURIComponent(body.join("\n\n"))}`}
+const TPL_PLAN=`Betreff: Aktueller Medikationsplan für %Patient% (geb. %Geburtsdatum%)
+
+Hallo liebes Praxisteam von %Praxis%,
+
+anbei der aktuelle Medikationsplan von %Patient% (geb. %Geburtsdatum%, Versichertennummer %Versichertennummer%), Stand %Datum%:
+
+%Medikationsplan%
+
+Herzliche Grüße
+%Absender%
+Tel. %Telefon%`;
+const TPL_PLAN_KEYS=["Patient","Geburtsdatum","Versichertennummer","Praxis","Medikationsplan","Absender","Telefon","Datum"];
+function planLines(p,marks){
+  if(!p.meds.length)return "(keine Medikamente erfasst)";
+  return p.meds.map(m=>{const sum=m.m+m.d+m.v+m.h,u=m.einheit&&m.einheit!=="Stück"?" "+m.einheit:"";
+    let dose=sum?`${doseStr(m)}${u}`:(m.frei||"nach Bedarf / ohne feste Dosierung");
+    if(sum&&m.rhythm&&m.rhythm!=="d1")dose+=", "+RHYTHM[m.rhythm][1];
+    if(sum&&m.frei&&!/\d\s*x\s*wtl/i.test(m.frei))dose+=" ("+m.frei+")";
+    let t=`- ${m.name}${m.form?" "+m.form:""}\n  ${dose}`;
+    const note=[m.hinweis,m.grund].filter(Boolean).join(", ");if(note)t+=`\n  Hinweis: ${note}`;
+    return t}).join("\n\n").replace(/^/,"(Dosierung: morgens-mittags-abends-zur Nacht)\n\n")}
+/* ===== Zustand ===== */
+function pzn8(p){return String(p||"").replace(/\D/g,"").padStart(8,"0")}
+function findOrCreateDoc(d){const key=(d.name||"").trim().toLowerCase();let doc=key&&S.docs.find(x=>x.name.trim().toLowerCase()===key);
+  if(!doc){doc={id:uid(),name:d.name||"Neue Praxis",email:d.email||"",phone:d.phone||"",addr:d.addr||""};S.docs.push(doc)}
+  else{["email","phone","addr"].forEach(k=>{if(!doc[k]&&d[k])doc[k]=d[k]})}return doc}
+const docOf=p=>S.docs.find(d=>d.id===p?.order?.docId)||null;
+function newPerson(name){return {id:uid(),name:name||"Neue Person",patient:null,meds:[],order:{}}}
+function save(){try{localStorage.setItem("medplan2",JSON.stringify(S));localStorage.removeItem("medplan")}catch(e){}}
+function load(){try{return JSON.parse(localStorage.getItem("medplan2"))||JSON.parse(localStorage.getItem("medplan"))}catch(e){return null}}
+let S=load();
+if(!S||!S.persons){const old=S;S={persons:[],current:null,threshold:14,me:{}};
+  if(old&&old.meds&&old.meds.length){const p=newPerson(old.patient?.name||"Person 1");p.meds=old.meds;p.patient=old.patient;p.order=old.order||{};S.persons.push(p)}}
+function migrate(){
+S.pzn=S.pzn||{};S.docs=S.docs||[];S.me=S.me||{};S.threshold=S.threshold||14;
+S.persons.forEach(p=>{const o=p.order=p.order||{};if(o.oDoc&&!o.docId)o.docId=findOrCreateDoc({name:o.oDoc,email:o.oDocMail||""}).id;
+  ["oDoc","oDocMail","oPharm","oPharmMail","oPickup","msgOverride","msgBase","planOverride","planBase"].forEach(k=>delete o[k]);
+  p.meds.forEach(m=>{delete m.rx;if(!m.packung)m.packung=100;if(!m.menge)m.menge=1})});
+  S.persons.forEach(p=>{p.meds=p.meds||[];p.order=p.order||{}});
+}
+migrate();
+if(!S.persons.length)S.persons.push(newPerson("Person 1"));
+if(!S.persons.find(p=>p.id===S.current))S.current=S.persons[0].id;
+save();
+const P=()=>S.persons.find(p=>p.id===S.current);
+const isLow=m=>{const r=reach(m);return r!==null&&r<S.threshold};
+const lvl=m=>{const r=reach(m);return r===null?"":r<=3?"out":r<S.threshold?"low":""};
+const whoName=p=>(p.patient?.name||p.name).replace(" (Beispiel)","");
+
+/* ===== Hilfen ===== */
+const APP_URL="https://claude.ai/artifact/GyA3xQU5T2tAKHqbrvsYVZ";
+const inWebView=false;
+const wvHint=()=>inWebView?`<div class="note warn">In der Claude-App lassen sich keine Dateien auswählen. Öffne die App in <b>Chrome</b>: Link kopieren, in Chrome einfügen, bei Claude anmelden.<br><span class="addr">${APP_URL}</span><br><button class="btn sm" data-act="copy-url" style="margin-top:6px">Link kopieren</button></div>`:"";
+function setStatus(msg,cls){const el=$("impStatus");if(!el)return;el.hidden=!msg;el.className="note "+(cls||"");el.textContent=msg||""}
+function offerText(t){const el=$("impText");if(el){el.value=t.trim();$("impMore")?.setAttribute("open","")}}
+let toastTimer=null;
+function toast(msg,btn,fn,ms){clearTimeout(toastTimer);$("toastText").textContent=msg;const b=$("toastBtn");b.hidden=!btn;b.textContent=btn||"";b.onclick=fn?()=>{fn();hideToast()}:null;$("toast").hidden=false;toastTimer=setTimeout(hideToast,ms||4000)}
+function hideToast(){$("toast").hidden=true;$("toastText").textContent=""}
+async function copyText(t,btn){const old=btn?.textContent;
+  try{await navigator.clipboard.writeText(t);if(btn){btn.textContent="Kopiert";setTimeout(()=>btn.textContent=old,1500)}}
+  catch(e){toast("Kopieren nicht möglich. Text markieren und über das Menü kopieren.")}}
+function doseBoxHTML(m){return doseBox(m)}
+const fmtN=x=>String(Math.round(num(x)*100)/100).replace(".",",");
+
+/* ===== Navigation ===== */
+let view="home";
+function go(v){view=v;document.querySelectorAll(".nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.view===v));
+  ["home","meds","rx","more"].forEach(x=>$("v-"+x).hidden=x!==v);render();window.scrollTo(0,0)}
+function render(){
+  const p=P();$("personName").textContent=p.name;
+  const p2=p.meds.filter(m=>!m.pending&&isLow(m)).length+p.meds.filter(m=>m.pending).length;
+  $("rxBadge").hidden=!p2;$("rxBadge").textContent=p2;
+  if(view==="home")renderHome();if(view==="meds")renderMeds();if(view==="rx")renderRx();if(view==="more")renderMore();
+}
+document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{if(b.dataset.view==="rx"&&view!=="rx")rxEnter();go(b.dataset.view)});
+
+/* ===== Blatt (Vollbild) ===== */
+let sheetKind=null,sheetArg=null;
+function openSheet(kind,arg){sheetKind=kind;sheetArg=arg;$("sheet").hidden=false;document.body.style.overflow="hidden";renderSheet();$("sheet").querySelector(".sheet-body").scrollTop=0}
+function closeSheet(){sheetKind=null;sheetArg=null;$("sheet").hidden=true;$("sheetBody").innerHTML="";document.body.style.overflow="";render()}
+function renderSheet(){const f={persons:shPersons,med:shMed,import:shImport,plan:shPlan,stock:shStock,doc:shDoc}[sheetKind];if(f)f(sheetArg)}
+
+/* ===== Übersicht ===== */
+function renderHome(){
+  const p=P(),meds=p.meds,el=$("homeBody"),doc=docOf(p);
+  if(!meds.length){el.innerHTML=`<div class="card go"><h2>${esc(p.name)}</h2><p>Noch keine Medikamente erfasst. Am schnellsten geht es mit dem Medikationsplan vom Arzt: Foto oder PDF genügt.</p>
+    <div class="btns"><button class="btn" data-act="import">Plan einlesen</button><button class="btn ghost" data-act="med-new">Von Hand anlegen</button></div>
+    <button class="btn sec sm" data-act="sample">Beispiel ansehen</button></div>`;return}
+  const lows=meds.filter(m=>!m.pending&&isLow(m)).sort((a,b)=>reach(a)-reach(b)),pend=meds.filter(m=>m.pending),unk=meds.filter(m=>reach(m)===null&&(m.m+m.d+m.v+m.h)>0);
+  let h=`<div class="card"><div class="kicker">${meds.length} Medikamente</div><h2>${esc(p.name)}</h2>
+    <p class="small muted">${[p.patient?.geb&&"geb. "+p.patient.geb,doc&&doc.name].filter(Boolean).map(esc).join(" · ")||"Arzt unter Mehr → Ärzte zuordnen"}</p></div>`;
+  if(lows.length)h+=`<div class="card warn"><div class="kicker">Wird knapp</div><div class="big">${lows.length}</div>
+    <div class="rows">${lows.map(m=>`<div><b>${esc(m.name)}</b><span class="r">${reach(m)} Tage</span></div>`).join("")}</div>
+    <button class="btn block" data-act="rx-low">Rezept anfordern</button></div>`;
+  if(pend.length)h+=`<div class="card go"><div class="kicker">Angefordert · wartet auf Abholung</div><div class="big">${pend.length}</div>
+    <div class="rows">${pend.map(m=>`<div><b>${esc(m.name)}</b><span class="r">seit ${esc(m.pending.date)}</span></div>`).join("")}</div>
+    <button class="btn block" data-act="rx-pick">Abgeholt? Bestand buchen</button></div>`;
+  if(!lows.length&&!pend.length){const nxt=meds.filter(m=>reach(m)!==null).sort((a,b)=>reach(a)-reach(b))[0];
+    h+=`<div class="card ok"><div class="kicker">Alles versorgt</div><p>${nxt?`Als Nächstes wird <b>${esc(nxt.name)}</b> knapp, in ${reach(nxt)} Tagen.`:"Kein Medikament ist knapp."}</p></div>`}
+  if(unk.length)h+=`<div class="card"><div class="kicker">Vorrat unbekannt</div><p>Bei ${unk.length} Medikament${unk.length>1?"en":""} fehlt der Vorrat. Ohne Vorrat warnt die App nicht rechtzeitig.</p><button class="btn sec block" data-act="stock">Bestand zählen</button></div>`;
+  el.innerHTML=h;
+}
+
+/* ===== Medikamente ===== */
+let importNote=null;
+function medCard(m){const r=reach(m),flags=[];
+  if(m.pending)flags.push(`<span class="pill pend">angefordert ${esc(m.pending.date)}</span>`);
+  if(m.noName||m.check||m.doseCheck)flags.push('<span class="pill low">bitte prüfen</span>');
+  const stock=m.bestand===""||m.bestand==null?'<span class="pill gray">Vorrat ?</span>':`<span class="pill ${lvl(m)}">${fmtN(m.bestand)} ${esc(unitShort(m))}${r!==null?" · "+r+" Tage":""}</span>`;
+  return `<button class="mcard ${lvl(m)}" data-act="med-open" data-id="${m.id}">
+    <span class="mname">${esc(m.noName?"Name fehlt":m.name)}${m.form?`<small>${esc(m.form)}</small>`:""}</span>
+    <span class="mbody">${doseBox(m)}<span class="mfacts">${stock}${flags.join("")}</span></span></button>`}
+function renderMeds(){const p=P(),el=$("medsBody");
+  el.innerHTML=`<div class="vhead"><h2>Medikamente</h2><span class="small muted">${p.meds.length} Stück · antippen zum Bearbeiten</span></div>
+  ${importNote?`<div class="note ${importNote.cls}">${esc(importNote.msg)} <button class="btn ghost sm" data-act="note-x" style="margin-top:6px">Verstanden</button></div>`:""}
+  <div class="btns"><button class="btn" data-act="import">Plan einlesen</button><button class="btn ghost" data-act="med-new">+ Medikament</button></div>
+  <div class="mlist">${p.meds.map(medCard).join("")||'<p class="muted">Noch keine Medikamente.</p>'}</div>
+  ${p.meds.length?`<div class="btns"><button class="btn sec" data-act="stock">Bestand zählen</button><button class="btn sec" data-act="plan">Plan an Arzt senden</button></div>`:""}`;
+}
+function doseFields(m){const v=k=>String(m[k]).replace(".",",");
+  return `<div><div class="kicker" style="margin-bottom:6px">Dosierung je Einnahme</div>
+  <div class="grid2" style="grid-template-columns:repeat(4,1fr)">${[["m","morgens"],["d","mittags"],["v","abends"],["h","nachts"]].map(([k,l])=>`<label for="md_${k}">${l}<input id="md_${k}" data-f="${k}" inputmode="decimal" value="${v(k)}" style="text-align:center;font-weight:700"></label>`).join("")}</div></div>
+  <div class="grid2"><label for="md_r">Rhythmus<select id="md_r" data-f="rhythm">${Object.entries(RHYTHM).map(([k,[,l]])=>`<option value="${k}" ${m.rhythm===k?"selected":""}>${l}</option>`).join("")}</select></label>
+  <label for="md_u">Einheit<select id="md_u" data-f="einheit">${UNITS.map(u=>`<option ${m.einheit===u?"selected":""}>${u}</option>`).join("")}</select></label></div>
+  <label for="md_t">Dosierung als Text (z. B. „bei Bedarf“)<input id="md_t" data-f="frei" value="${esc(m.frei)}"></label>`}
+let medDel=false;
+function shMed(id){const p=P(),m=p.meds.find(x=>x.id===id);if(!m){closeSheet();return}
+  $("sheetTitle").textContent=m.noName?"Medikament":m.name;
+  const u=esc(m.einheit||"Stück");
+  $("sheetBody").innerHTML=`
+  ${m.noName||m.check?`<div class="note warn">${m.noName?"Der Name fehlt im Barcode. Bitte eintragen.":"Name wurde per Texterkennung gelesen. Bitte prüfen."}${m.handel?`<br>Laut Ausdruck: ${esc(m.handel)}`:""}</div>`:""}
+  ${m.doseCheck?'<div class="note warn">Dosierung per Texterkennung gelesen. Bitte mit dem Ausdruck vergleichen.</div>':""}
+  <div class="card">
+    <label for="md_name">Name<input id="md_name" data-f="name" value="${m.noName?"":esc(m.name)}" placeholder="z. B. Ramipril 5 mg" list="nameSug" style="background:var(--hl);color:var(--hl-ink);font-weight:700;border-color:transparent"></label>
+    <datalist id="nameSug">${(p.suggest||[]).map(n=>`<option value="${esc(n)}"></option>`).join("")}</datalist>
+    <div class="grid2"><label for="md_form">Form<input id="md_form" data-f="form" value="${esc(m.form)}" placeholder="Tabletten"></label>
+    <label for="md_hint">Hinweis<input id="md_hint" data-f="hinweis" value="${esc([m.hinweis,m.grund].filter(Boolean).join(", "))}"></label></div>
+  </div>
+  <div class="card">${doseFields(m)}${m.doseHist?`<p class="small muted">Geändert am ${esc(m.doseHist.date)}, vorher ${esc(m.doseHist.old)}</p>`:""}</div>
+  <div class="card"><div class="kicker">Vorrat</div>
+    <div class="grid2"><label for="md_b">Vorrat jetzt (${u})<input id="md_b" data-f="bestand" inputmode="decimal" value="${m.bestand===""||m.bestand==null?"":fmtN(m.bestand)}" placeholder="?"></label>
+    <label for="md_pk">Packungsgröße (${u})<input id="md_pk" data-f="packung" inputmode="numeric" value="${esc(m.packung)}"></label></div>
+    <p class="small">${reach(m)===null?'<span class="pill gray">Reichweite unbekannt</span>':reachPill(m)}</p></div>
+  ${medDel?`<div class="confirm"><b>${esc(m.name)} wirklich entfernen?</b><div class="btns"><button class="btn danger" data-act="med-del-yes">Ja, entfernen</button><button class="btn ghost" data-act="med-del-no">Abbrechen</button></div></div>`
+  :`<button class="btn ghost block" data-act="med-del" style="color:var(--bad)">Medikament entfernen</button>`}
+  <button class="btn block" data-act="sheet-close">Fertig</button>`;
+}
+$("sheetBody").addEventListener("change",e=>{
+  if(sheetKind!=="med")return;const f=e.target.dataset.f;if(!f)return;const m=P().meds.find(x=>x.id===sheetArg);if(!m)return;const t=e.target;
+  if(["m","d","v","h","rhythm","einheit","frei"].includes(f)){const g=k=>$("md_"+k).value;setDose(m,{m:num(g("m")),d:num(g("d")),v:num(g("v")),h:num(g("h")),rhythm:g("r"),einheit:g("u"),frei:g("t").trim()})}
+  else if(f==="bestand")m.bestand=t.value.trim()===""?"":String(num(t.value));
+  else if(f==="packung")m.packung=Math.max(1,Math.round(num(t.value)))||1;
+  else if(f==="hinweis"){m.hinweis=t.value.trim();m.grund=""}
+  else if(f==="name"){m.name=t.value.trim()||m.name;m.noName=!t.value.trim();m.check=false;if(m.pzn&&!m.noName)S.pzn[m.pzn]={name:m.name,form:m.form}}
+  else m[f]=t.value.trim();
+  save();const y=$("sheet").querySelector(".sheet-body").scrollTop;shMed(m.id);$("sheet").querySelector(".sheet-body").scrollTop=y;render()});
+
+/* ===== Plan einlesen ===== */
+function shImport(){$("sheetTitle").textContent="Plan einlesen";
+  $("sheetBody").innerHTML=`<div class="card"><p>Foto oder PDF des <b>bundeseinheitlichen Medikationsplans</b> wählen. Am besten klappt es, wenn der quadratische Barcode scharf zu sehen ist.</p>
+    ${wvHint()}<label for="impFile">Foto oder PDF<input type="file" id="impFile" class="filein" accept="image/*,application/pdf"></label>
+    <p class="note" id="impStatus" hidden></p>
+    <p class="small muted">Einlesen für: <b>${esc(P().name)}</b>. Steht im Plan ein anderer Name, legt die App eine neue Person an. Vorrat und offene Anforderungen bleiben erhalten.</p></div>
+  <details class="box" id="impMore"><summary>Ohne Datei: Text einfügen</summary><div class="in">
+    <p class="small muted">Zeilen wie „Ramipril 5 mg 1-0-0-0“, oder der erkannte Text zum Korrigieren.</p>
+    <textarea id="impText"></textarea><button class="btn" data-act="imp-text">Text übernehmen</button></div></details>`;
+  $("impFile").onchange=e=>{const f=e.target.files[0];e.target.value="";if(f)handleFile(f)}}
+function mergeMeds(old,neu){
+  const used=new Set(),norm=s=>(s||"").toLowerCase().replace(/[^a-zäöüß0-9]/g,"");
+  neu.forEach(n=>{let o=old.find(x=>!used.has(x.id)&&x.pzn&&n.pzn&&pzn8(x.pzn)===pzn8(n.pzn));
+    if(!o)o=old.find(x=>!used.has(x.id)&&norm(x.name)&&norm(x.name)===norm(n.name));
+    if(!o)o=old.find(x=>!used.has(x.id)&&!n.noName&&x.name&&n.name&&norm(x.name.split(" ")[0])===norm(n.name.split(" ")[0]));
+    if(o){used.add(o.id);["bestand","packung","menge","pending","lastOrder","lastPickup","stockDate","order"].forEach(k=>{if(o[k]!=null&&o[k]!=="")n[k]=o[k]});
+      if(n.noName&&!o.noName){n.name=o.name;n.noName=false;n.form=n.form||o.form}}});
+  return {meds:neu,removed:old.filter(x=>!used.has(x.id))}}
+function applyPlan(plan){
+  let p=P();const pn=plan.patient?.name;
+  if(pn){const match=S.persons.find(x=>x.name.toLowerCase()===pn.toLowerCase()||x.patient?.name?.toLowerCase()===pn.toLowerCase());
+    if(match)p=match;else if(p.meds.length&&p.patient&&p.patient.name!==pn){p=newPerson(pn);S.persons.push(p)}else if(/^Person \d+$|^Neue Person$/.test(p.name))p.name=pn}
+  const r=mergeMeds(p.meds,plan.meds);p.meds=r.meds;p.patient=plan.patient||p.patient;p.suggest=plan.suggest||[];
+  if(plan.patient?.praxis){const d=findOrCreateDoc({name:plan.patient.praxis,email:plan.patient.praxisMail,phone:plan.patient.praxisTel,addr:plan.patient.praxisAddr});if(!p.order.docId)p.order.docId=d.id}
+  if(plan.patient?.kvnr&&!p.order.oKvnr)p.order.oKvnr=plan.patient.kvnr;
+  S.current=p.id;save();
+  const st=$("impStatus");importNote={msg:(st&&st.textContent?st.textContent:`${p.meds.length} Medikamente übernommen.`)+(r.removed.length?` Nicht mehr im Plan und entfernt: ${r.removed.map(x=>x.name).join(", ")}.`:""),cls:st&&/warn|err/.test(st.className)?"warn":"ok"};
+  closeSheet();go("meds");
+}
+
+/* ===== Bestand zählen ===== */
+const pk={};
+function pkGet(m){if(!pk[m.id]){const pd=m.pending;pk[m.id]={chk:false,packs:pd?pd.menge:0,size:pd?pd.packung:m.packung,ist:0,touched:false,remember:false}}
+  const d=pk[m.id];if(!d.touched)d.ist=Math.round((num(m.bestand)+(m.pending?d.packs*d.size:0))*100)/100;return d}
+function pickRow(m){const d=pkGet(m),u=esc(unitShort(m)),isP=!!m.pending;
+  return `<div class="sel ${d.chk?"on":""}" data-pk="${m.id}">
+    <label class="head" for="pkc_${m.id}"><input type="checkbox" id="pkc_${m.id}" data-pkf="chk" ${d.chk?"checked":""}>
+      <span class="t">${esc(m.name)}<small>${isP?`angefordert am ${esc(m.pending.date)} · ${m.pending.menge} × ${m.pending.packung} ${u}`:`Vorrat laut App: ${m.bestand===""||m.bestand==null?"unbekannt":fmtN(m.bestand)+" "+u}`}</small></span></label>
+    <div class="foot">
+      ${isP?`<label for="pkp_${m.id}">Packungen<input class="num" id="pkp_${m.id}" data-pkf="packs" inputmode="numeric" value="${d.packs}"></label>
+      <label for="pks_${m.id}">${u} je Packung<input class="num" id="pks_${m.id}" data-pkf="size" inputmode="numeric" value="${d.size}"></label>`:""}
+      <label class="ist" for="pki_${m.id}">${isP?"Bestand nach Abholung":"Gezählt"} (${u})<input class="num" id="pki_${m.id}" data-pkf="ist" inputmode="decimal" value="${fmtN(d.ist)}"></label>
+      ${isP&&d.size!==m.pending.packung?`<label class="chk small" for="pkr_${m.id}" style="flex:1 1 100%"><input type="checkbox" id="pkr_${m.id}" data-pkf="remember" ${d.remember?"checked":""}> Packungsgröße ${d.size} künftig verwenden</label>`:""}
+      ${isP?`<button class="btn ghost sm" data-act="pk-drop" data-id="${m.id}">Anforderung verwerfen</button>`:""}
+    </div></div>`}
+function pickInput(e){const f=e.target.dataset.pkf,row=e.target.closest("[data-pk]");if(!f||!row)return;const id=row.dataset.pk,d=pk[id],m=P().meds.find(x=>x.id===id);if(!d||!m)return;
+  if(f==="chk"){d.chk=e.target.checked;row.classList.toggle("on",d.chk);updBook();return}
+  if(f==="remember"){d.remember=e.target.checked;return}
+  if(f==="ist"){d.ist=num(e.target.value);d.touched=true}
+  else{d[f]=Math.max(0,Math.round(num(e.target.value)));if(!d.touched){d.ist=Math.round((num(m.bestand)+d.packs*d.size)*100)/100;$("pki_"+id).value=fmtN(d.ist)}
+    if(f==="size"&&!!$("pkr_"+id)!==(d.size!==m.pending.packung)){row.outerHTML=pickRow(m);const el=$("pks_"+id);el.focus();el.setSelectionRange(el.value.length,el.value.length)}}
+  if(!d.chk){d.chk=true;const c=$("pkc_"+id);if(c)c.checked=true;document.querySelector(`[data-pk="${id}"]`)?.classList.add("on")}updBook()}
+function updBook(){document.querySelectorAll("[data-act=pk-book]").forEach(b=>{const ids=[...document.querySelectorAll("[data-pk]")].map(r=>r.dataset.pk).filter(id=>pk[id]?.chk);b.disabled=!ids.length;b.textContent=ids.length?`${ids.length} buchen`:"Abgehakte buchen"})}
+function bookPicked(){const p=P(),done=[];
+  p.meds.forEach(m=>{const d=pk[m.id];if(!d||!d.chk||!document.querySelector(`[data-pk="${m.id}"]`))return;
+    m.bestand=String(Math.max(0,Math.round(d.ist*100)/100));
+    if(m.pending){if(d.remember&&d.size>0)m.packung=d.size;m.lastPickup=today();m.pending=null}
+    m.stockDate=today();done.push(m.name);delete pk[m.id]});
+  save();toast(done.length?(done.length<=2?`Gebucht: ${done.join(", ")}`:`${done.length} Medikamente gebucht.`):"Nichts abgehakt.")}
+function shStock(){const p=P();$("sheetTitle").textContent="Bestand zählen";
+  $("sheetBody").innerHTML=`<p class="muted">Vorrat zählen, Zahl eintragen und abhaken. Nur Abgehakte werden gebucht.</p>
+  <div class="mlist">${p.meds.filter(m=>!m.pending).map(pickRow).join("")}</div>
+  <div class="stickybar" style="bottom:calc(10px + env(safe-area-inset-bottom,0px))"><button class="btn block" data-act="pk-book" disabled>Abgehakte buchen</button></div>`;updBook()}
+$("sheetBody").addEventListener("input",e=>{if(sheetKind==="stock")pickInput(e)});
+$("sheetBody").addEventListener("change",e=>{if(sheetKind==="stock"&&e.target.type==="checkbox")pickInput(e)});
+
+/* ===== Rezepte: 3 Schritte ===== */
+let rxStep=1,rxMsg=null,rxNote="";
+function rxEnter(){const p=P();
+  if(p.meds.some(m=>m.pending)&&!p.meds.some(m=>m.order)&&!p.meds.some(m=>!m.pending&&isLow(m)))rxStep=3;
+  else{rxStep=1;rxPreselect()}}
+function rxPreselect(){const p=P();if(p.meds.some(m=>m.order))return;const l=p.meds.filter(m=>!m.pending&&isLow(m));l.forEach(m=>m.order=true);
+  rxNote=l.length?`${l.length} knappe${l.length>1?"":"s"} Medikament${l.length>1?"e":""} vorausgewählt.`:"";save()}
+function rxMailText(){const p=P(),o=p.order,doc=docOf(p),sel=p.meds.filter(m=>m.order&&!m.pending);
+  const list=sel.length?sel.map(m=>"- "+line(m)).join("\n\n"):"(keine Medikamente ausgewählt)";
+  return fillTpl(S.tplDoc||TPL_DOC,{Patient:whoName(p),Geburtsdatum:p.patient?.geb||"",Versichertennummer:(o.oKvnr||"").trim(),Praxis:doc?.name||"",Apotheke:"",Medikamente:list,Absender:S.me.oName||"",Telefon:S.me.oPhone||"",Datum:today()})}
+function renderRx(){const p=P(),el=$("rxBody"),sel=p.meds.filter(m=>m.order&&!m.pending),pend=p.meds.filter(m=>m.pending);
+  let h=`<div class="vhead"><h2>Rezept anfordern</h2></div>
+  <div class="steps" role="tablist">${[[1,"Auswählen",sel.length],[2,"Mail senden",""],[3,"Abholen",pend.length]].map(([n,l,c])=>`<button data-act="rx-step" data-step="${n}" ${rxStep===n?'aria-current="step"':""}><b>${n}</b>${l}${c?` (${c})`:""}</button>`).join("")}</div>`;
+  if(rxStep===1){
+    const avail=p.meds.filter(m=>!m.pending);
+    h+=`${rxNote?`<p class="note">${esc(rxNote)}</p>`:""}<p class="muted">Was soll die Praxis aufs Rezept schreiben? Anhaken und die Zahl der Packungen wählen.</p>
+    <div class="mlist">${avail.map(m=>`<div class="sel ${m.order?"on":""}">
+      <label class="head" for="rs_${m.id}"><input type="checkbox" id="rs_${m.id}" data-rxsel="${m.id}" ${m.order?"checked":""}>
+        <span class="t">${esc(m.name)}<small>${reach(m)===null?"Vorrat unbekannt":`noch ${reach(m)} Tage`} · Packung ${m.packung} ${esc(unitShort(m))}</small></span></label>
+      ${m.order?`<div class="foot"><span class="small muted" style="align-self:center">Packungen</span><span class="stepper"><button data-act="rx-qty" data-id="${m.id}" data-d="-1" aria-label="weniger">−</button><output>${m.menge}</output><button data-act="rx-qty" data-id="${m.id}" data-d="1" aria-label="mehr">+</button></span></div>`:""}
+    </div>`).join("")||'<p class="muted">Alle Medikamente sind schon angefordert.</p>'}</div>
+    ${pend.length?`<p class="small muted">${pend.length} bereits angefordert, siehe Schritt 3.</p>`:""}
+    <div class="stickybar"><button class="btn block" data-act="rx-step" data-step="2" ${sel.length?"":"disabled"}>Weiter: Mail an Praxis (${sel.length})</button></div>`}
+  if(rxStep===2){
+    const doc=docOf(p);if(rxMsg==null)rxMsg=rxMailText();
+    h+=sel.length?"":`<p class="note warn">Noch nichts ausgewählt. Zurück zu Schritt 1.</p>`;
+    h+=`<div class="card"><label for="rxDoc">An Arzt / Praxis<select id="rxDoc">${docOptions(doc?.id)}</select></label>
+      ${doc?(doc.email?`<p class="small">E-Mail: <span class="addr">${esc(doc.email)}</span></p>`:`<p class="note warn">Keine E-Mail hinterlegt. <button class="btn ghost sm" data-act="doc-edit" data-id="${doc.id}">E-Mail eintragen</button></p>`):""}
+      <label for="rxKv">Versichertennummer<input id="rxKv" value="${esc(p.order.oKvnr||"")}" autocomplete="off" placeholder="von der Karte, z. B. A123456789"></label></div>
+    <div class="card"><label for="rxText">Nachricht, direkt änderbar<textarea class="mail" id="rxText">${esc(rxMsg)}</textarea></label>
+      <button class="btn ghost sm" data-act="rx-regen" style="align-self:flex-start">Text neu aus Vorlage</button></div>
+    ${sendBox("rxText",doc?.email)}
+    <div class="stickybar"><button class="btn block" data-act="rx-sent" ${sel.length?"":"disabled"}>Mail ist raus: als angefordert merken</button></div>`}
+  if(rxStep===3){
+    h+=pend.length?`<p class="muted">Nach dem Abholen abhaken. Die Menge ist vorausgefüllt, bei anderer Packungsgröße einfach ändern.</p>
+      <div class="mlist">${pend.map(pickRow).join("")}</div>
+      <div class="stickybar"><button class="btn block" data-act="pk-book" disabled>Abgehakte buchen</button></div>`
+      :`<div class="card ok"><p>Nichts offen. Angeforderte Medikamente erscheinen hier, bis sie abgeholt sind.</p></div>`}
+  el.innerHTML=h;
+  if(rxStep===2){$("rxText").oninput=e=>{rxMsg=e.target.value;updSend("rxText",docOf(P())?.email)};
+    $("rxDoc").onchange=e=>{if(e.target.value==="__new"){const d=findOrCreateDoc({name:"Neue Praxis "+(S.docs.length+1)});P().order.docId=d.id;save();openSheet("doc",d.id);return}
+      P().order.docId=e.target.value||undefined;save();rxMsg=rxMailText();renderRx()};
+    $("rxKv").onchange=e=>{P().order.oKvnr=e.target.value.trim();save();rxMsg=rxMailText();renderRx()}}
+  if(rxStep===3)updBook();
+  if(rxStep===2)updSend("rxText",docOf(p)?.email);
+}
+/* Mail verschicken: Kopieren in drei Teilen + Gmail-Entwurf (mailto: wird in der Online-Ansicht blockiert) */
+function splitMail(t){t=t||"";const m=/^\s*Betreff:\s*(.*)\n/.exec(t);return m?{subj:m[1].trim(),body:t.slice(m[0].length).replace(/^\s*\n/,"")}:{subj:"",body:t}}
+function gmailUrl(to,t){const x=splitMail(t);return "https://mail.google.com/mail/?view=cm&fs=1&to="+encodeURIComponent(to||"")+"&su="+encodeURIComponent(x.subj)+"&body="+encodeURIComponent(x.body)}
+function sendBox(src,to){return `<div class="card"><div class="kicker">Mail verschicken</div>
+  <button class="btn" data-act="draft" data-src="${src}" data-to="${esc(to||"")}">Als Mail-Entwurf öffnen</button>
+  <p class="note warn" id="${src}_dn" hidden>Das Mailprogramm ließ sich aus der Online-Ansicht nicht öffnen. Bitte die drei Teile unten kopieren.</p>
+  <p class="small muted">Klappt das nicht: Mail-App öffnen, neue Mail anlegen und die drei Teile einfügen.</p>
+  <div class="rows">
+    <div><span><b>1 · An</b><br><span class="addr">${to?esc(to):"(keine E-Mail hinterlegt)"}</span></span><button class="btn ghost sm" data-act="cp" data-src="${src}" data-part="to" data-to="${esc(to||"")}" ${to?"":"disabled"}>Kopieren</button></div>
+    <div><span><b>2 · Betreff</b><br><span class="small" id="${src}_subj">${esc(splitMail($(src)?.value??"").subj)}</span></span><button class="btn ghost sm" data-act="cp" data-src="${src}" data-part="subj">Kopieren</button></div>
+    <div><span><b>3 · Nachricht</b></span><button class="btn ghost sm" data-act="cp" data-src="${src}" data-part="body">Kopieren</button></div>
+  </div>
+  <a class="btn sec" id="${src}_gm" href="#" target="_blank" rel="noopener">Mit Gmail öffnen</a>
+  <p class="small muted">„Mit Gmail öffnen“ füllt alles automatisch aus, wenn du Gmail nutzt.</p></div>`}
+function updSend(src,to){const v=$(src)?.value||"",s2=$(src+"_subj"),g=$(src+"_gm");if(s2)s2.textContent=splitMail(v).subj;if(g)g.href=gmailUrl(to,v)}
+function docOptions(sel){return `<option value="">– bitte wählen –</option>`+S.docs.map(x=>`<option value="${x.id}" ${x.id===sel?"selected":""}>${esc(x.name)}</option>`).join("")+`<option value="__new">+ Neuen Arzt anlegen …</option>`}
+$("rxBody").addEventListener("change",e=>{const id=e.target.dataset.rxsel;if(id){const m=P().meds.find(x=>x.id===id);m.order=e.target.checked;rxNote="";rxMsg=null;save();render()}
+  if(rxStep===3&&e.target.type==="checkbox")pickInput(e)});
+$("rxBody").addEventListener("input",e=>{if(rxStep===3)pickInput(e)});
+
+/* ===== Plan an Arzt senden ===== */
+let planMsg=null,planDoc=null;
+function shPlan(){const p=P();$("sheetTitle").textContent="Plan an Arzt senden";
+  const doc=S.docs.find(d=>d.id===(planDoc||p.order.docId))||null;
+  if(planMsg==null)planMsg=fillTpl(S.tplPlan||TPL_PLAN,{Patient:whoName(p),Geburtsdatum:p.patient?.geb||"",Versichertennummer:(p.order.oKvnr||"").trim(),Praxis:doc?.name||"",Medikationsplan:planLines(p),Absender:S.me.oName||"",Telefon:S.me.oPhone||"",Datum:today()});
+  $("sheetBody").innerHTML=`<p class="muted">Für Facharzt, Klinik oder Vertretung: alle Medikamente mit aktueller Dosierung.</p>
+  <div class="card"><label for="plDoc">An Arzt / Praxis<select id="plDoc">${docOptions(doc?.id)}</select></label>
+  ${doc?.email?`<p class="small">E-Mail: <span class="addr">${esc(doc.email)}</span></p>`:doc?`<p class="note warn">Keine E-Mail hinterlegt. <button class="btn ghost sm" data-act="doc-edit" data-id="${doc.id}">E-Mail eintragen</button></p>`:""}</div>
+  <div class="card"><label for="plText">Nachricht, direkt änderbar<textarea class="mail" id="plText">${esc(planMsg)}</textarea></label>
+  </div>${sendBox("plText",doc?.email)}`;
+  $("plText").oninput=e=>{planMsg=e.target.value;updSend("plText",S.docs.find(d=>d.id===(planDoc||P().order.docId))?.email)};
+  updSend("plText",doc?.email);
+  $("plDoc").onchange=e=>{if(e.target.value==="__new"){const d=findOrCreateDoc({name:"Neue Praxis "+(S.docs.length+1)});planDoc=d.id;save();openSheet("doc",d.id);return}planDoc=e.target.value||null;planMsg=null;shPlan()}}
+
+/* ===== Personen ===== */
+function shPersons(){$("sheetTitle").textContent="Person wählen";
+  $("sheetBody").innerHTML=`<div class="mlist">${S.persons.map(p=>{const l=p.meds.filter(m=>!m.pending&&isLow(m)).length,pe=p.meds.filter(m=>m.pending).length;
+    return `<button class="mcard" data-act="person-pick" data-id="${p.id}" ${p.id===S.current?'style="border-color:var(--accent)"':""}><span class="mname">${esc(p.name)}<small>${p.meds.length} Medikamente${l?` · ${l} knapp`:""}${pe?` · ${pe} angefordert`:""}</small></span></button>`}).join("")}</div>
+  <button class="btn ghost block" data-act="person-add">+ Person hinzufügen</button>
+  <button class="btn sec block" data-act="goto-more">Personen verwalten</button>`}
+
+/* ===== Arzt bearbeiten (Blatt) ===== */
+function shDoc(id){const d=S.docs.find(x=>x.id===id);if(!d){closeSheet();return}$("sheetTitle").textContent="Arzt / Praxis";
+  $("sheetBody").innerHTML=`<div class="card">${docFields(d)}</div><button class="btn block" data-act="doc-done">Fertig</button>`;
+  setTimeout(()=>{const n=$("df_name_"+d.id);if(n&&/^Neue Praxis/.test(d.name)){n.focus();n.select()}},50)}
+function docFields(d){return `<label for="df_name_${d.id}">Name<input id="df_name_${d.id}" data-doc="${d.id}" data-df="name" value="${esc(d.name)}"></label>
+  <label for="df_email_${d.id}">E-Mail<input id="df_email_${d.id}" type="email" data-doc="${d.id}" data-df="email" value="${esc(d.email)}"></label>
+  <div class="grid2"><label for="df_phone_${d.id}">Telefon<input id="df_phone_${d.id}" type="tel" data-doc="${d.id}" data-df="phone" value="${esc(d.phone)}"></label>
+  <label for="df_addr_${d.id}">Adresse<input id="df_addr_${d.id}" data-doc="${d.id}" data-df="addr" value="${esc(d.addr)}"></label></div>`}
+document.addEventListener("input",e=>{const id=e.target.dataset.doc;if(!id)return;const d=S.docs.find(x=>x.id===id);if(d){d[e.target.dataset.df]=e.target.value;save()}});
+
+/* ===== Mehr ===== */
+let delId=null,delDocId=null,undo=null,openMore=new Set(["persons"]);
+function renderMore(){const el=$("moreBody");
+  const sec=(id,title,body)=>`<details class="box" data-sec="${id}" ${openMore.has(id)?"open":""}><summary>${title}</summary><div class="in">${body}</div></details>`;
+  const persons=S.persons.map(p=>{const d=docOf(p),solo=d&&!S.persons.some(x=>x.id!==p.id&&x.order?.docId===d.id);
+    return `<div class="card" style="padding:12px">
+    <label for="pn_${p.id}">Name<input id="pn_${p.id}" data-pname="${p.id}" value="${esc(p.name)}"></label>
+    <label for="pd_${p.id}">Arzt für Rezepte<select id="pd_${p.id}" data-pdoc="${p.id}">${docOptions(p.order?.docId)}</select></label>
+    ${delId===p.id?`<div class="confirm"><b>${esc(p.name)} entfernen?</b><span class="small">Gelöscht werden ${p.meds.length} Medikamente mit Vorrat und Anforderungen sowie Versichertennummer und alle Angaben zu dieser Person.</span>
+      ${solo?`<label class="chk small" for="delDoc" style="color:inherit"><input type="checkbox" id="delDoc" checked> Auch ${esc(d.name)} entfernen (nutzt sonst niemand)</label>`:""}
+      <div class="btns"><button class="btn danger" data-act="p-del-yes">Ja, entfernen</button><button class="btn ghost" data-act="p-del-no">Abbrechen</button></div></div>`
+    :`<button class="btn ghost sm" data-act="p-del" data-id="${p.id}" style="color:var(--bad);align-self:flex-start">Person entfernen</button>`}</div>`}).join("");
+  const docs=S.docs.map(d=>{const users=S.persons.filter(p=>p.order?.docId===d.id).map(p=>p.name);
+    return `<div class="card" style="padding:12px">${docFields(d)}<p class="small muted">${users.length?"Für: "+users.map(esc).join(", "):"Keiner Person zugeordnet"}</p>
+    ${delDocId===d.id?`<div class="confirm"><b>${esc(d.name)} entfernen?</b><div class="btns"><button class="btn danger" data-act="d-del-yes" data-id="${d.id}">Ja, entfernen</button><button class="btn ghost" data-act="d-del-no">Abbrechen</button></div></div>`
+    :`<button class="btn ghost sm" data-act="d-del" data-id="${d.id}" style="color:var(--bad);align-self:flex-start">Arzt entfernen</button>`}</div>`}).join("")||'<p class="muted">Noch kein Arzt. Beim Einlesen eines Plans wird die Praxis automatisch angelegt.</p>';
+  const tpl=(key,def,keys,label)=>`<label for="tpl_${key}">${label}<textarea class="mail" id="tpl_${key}" data-tpl="${key}">${esc(S[key]||def)}</textarea></label>
+    <div class="chips">${keys.map(k=>`<button class="chip" data-ph="%${k}%" data-for="tpl_${key}">%${k}%</button>`).join("")}</div>
+    <button class="btn ghost sm" data-act="tpl-reset" data-key="${key}" style="align-self:flex-start">Standard wiederherstellen</button>`;
+  el.innerHTML=`<div class="vhead"><h2>Mehr</h2></div>
+  ${sec("persons","Personen",persons+`<button class="btn ghost" data-act="person-add">+ Person hinzufügen</button>`)}
+  ${sec("docs","Ärzte und Praxen",docs+`<button class="btn ghost" data-act="doc-add">+ Arzt hinzufügen</button>`)}
+  ${sec("me","Meine Daten",`<p class="small muted">Absender in allen Mails.</p><label for="meName">Name<input id="meName" data-me="oName" value="${esc(S.me.oName||"")}" autocomplete="name"></label>
+    <label for="mePhone">Telefon<input id="mePhone" data-me="oPhone" type="tel" value="${esc(S.me.oPhone||"")}" autocomplete="tel"></label>
+    <label for="meThr">Als knapp melden, wenn Vorrat kürzer reicht als (Tage)<input id="meThr" data-thr="1" inputmode="numeric" value="${S.threshold}"></label>`)}
+  ${sec("tpl","Mail-Vorlagen",`<p class="small muted">Platzhalter antippen fügt sie an der Schreibmarke ein. Leere Angaben fallen automatisch weg.</p>
+    ${tpl("tplDoc",TPL_DOC,["Patient","Geburtsdatum","Versichertennummer","Praxis","Medikamente","Absender","Telefon","Datum"],"Rezept anfordern")}
+    ${tpl("tplPlan",TPL_PLAN,TPL_PLAN_KEYS,"Plan an Arzt senden")}`)}
+  ${sec("backup","Datensicherung &amp; anderes Gerät",`<p class="small muted">Die Daten liegen nur in diesem Browser. Sicherung mit Passwort erstellen, als Text an dich schicken, auf dem anderen Gerät einlesen. Auch sinnvoll, bevor Browserdaten gelöscht werden.</p>
+    <label for="bkPass">Passwort (mind. 6 Zeichen)<input id="bkPass" type="password" autocomplete="new-password"></label>
+    <button class="btn" data-act="bk-make">Sicherung als Text kopieren</button><textarea id="bkOut" readonly hidden style="min-height:80px;font:.8rem var(--f-mono)"></textarea>
+    <hr style="border:0;border-top:1px solid var(--line);width:100%">
+    <div class="kicker">Sicherung einlesen</div>
+    ${wvHint()}<label for="rsFile">Sicherungsdatei<input id="rsFile" type="file" class="filein"></label>
+    <p class="small muted" id="rsFileName">Datei aus Downloads, Mail-Anhang oder Dateien-App.</p>
+    <label for="rsText">oder Text einfügen<textarea id="rsText" placeholder="MEDPLAN1:…" style="min-height:80px"></textarea></label>
+    <label for="rsPass">Passwort<input id="rsPass" type="password" autocomplete="off"></label>
+    <button class="btn" data-act="rs-check">Sicherung einlesen</button><div id="rsConfirm"></div>`)}
+  <p class="small muted" style="text-align:center">Alle Daten bleiben auf diesem Gerät.</p>`;
+  $("rsFile").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+    let t="";try{t=(await f.text()).trim()}catch(err){}
+    if(!/^MEDPLAN1:/.test(t.replace(/\s+/g,""))){$("rsFileName").textContent=`„${f.name}“ ist keine Sicherung dieser App. Eine Sicherung beginnt mit „MEDPLAN1:“.`;$("rsFileName").className="note err";return}
+    $("rsText").value=t;$("rsFileName").textContent=`Geladen: ${f.name}. Jetzt Passwort eingeben und „Sicherung einlesen“ tippen.`;$("rsFileName").className="note ok";$("rsPass").focus()};
+}
+$("moreBody").addEventListener("toggle",e=>{const s=e.target.dataset?.sec;if(s){e.target.open?openMore.add(s):openMore.delete(s)}},true);
+$("moreBody").addEventListener("change",e=>{const t=e.target;
+  if(t.dataset.pname){const p=S.persons.find(x=>x.id===t.dataset.pname);p.name=t.value.trim()||"Ohne Namen";save();render()}
+  if(t.dataset.pdoc){const p=S.persons.find(x=>x.id===t.dataset.pdoc);if(t.value==="__new"){const d=findOrCreateDoc({name:"Neue Praxis "+(S.docs.length+1)});p.order.docId=d.id;save();openSheet("doc",d.id);return}p.order.docId=t.value||undefined;save();render()}
+  if(t.dataset.me){S.me[t.dataset.me]=t.value.trim();save()}
+  if(t.dataset.thr){S.threshold=Math.max(1,Math.round(num(t.value)))||14;save();render()}
+  if(t.dataset.df==="name")render()});
+$("moreBody").addEventListener("input",e=>{const k=e.target.dataset.tpl;if(k){S[k]=e.target.value===({tplDoc:TPL_DOC,tplPlan:TPL_PLAN})[k]?undefined:e.target.value;save()}});
+
+/* ===== Person entfernen (mit Rückgängig) ===== */
+let blobUrls=[];
+function purgeTransient(){rxMsg=null;planMsg=null;planDoc=null;rxNote="";importNote=null;medDel=false;Object.keys(pk).forEach(k=>delete pk[k]);
+  blobUrls.forEach(u=>{try{URL.revokeObjectURL(u)}catch(e){}});blobUrls=[];
+  if(ocrWorker){try{ocrWorker.terminate()}catch(e){}ocrWorker=null}
+  if(!$("sheet").hidden)closeSheet()}
+function delPerson(){const idx=S.persons.findIndex(p=>p.id===delId);if(idx<0)return;
+  const wantDoc=$("delDoc")?.checked;const [gone]=S.persons.splice(idx,1);
+  const keep=new Set(S.persons.flatMap(p=>p.meds.map(m=>pzn8(m.pzn))));const pznGone={};
+  gone.meds.forEach(m=>{if(m.pzn&&S.pzn[m.pzn]&&!keep.has(pzn8(m.pzn))){pznGone[m.pzn]=S.pzn[m.pzn];delete S.pzn[m.pzn]}});
+  let docGone=null;const gd=S.docs.find(x=>x.id===gone.order?.docId);
+  if(gd&&wantDoc&&!S.persons.some(x=>x.order?.docId===gd.id)){docGone={doc:gd,idx:S.docs.indexOf(gd)};S.docs=S.docs.filter(x=>x!==gd)}
+  if(!S.persons.length)S.persons.push(newPerson("Person 1"));
+  if(!S.persons.find(p=>p.id===S.current))S.current=S.persons[Math.min(idx,S.persons.length-1)].id;
+  undo={person:gone,idx,pzn:pznGone,doc:docGone};delId=null;purgeTransient();save();render();
+  setTimeout(()=>{undo=null},15000);toast(`${gone.name} wurde entfernt.`,"Rückgängig",()=>{
+    if(!undo)return;if(S.persons.length===1&&!S.persons[0].meds.length&&/^Person \d+$/.test(S.persons[0].name))S.persons=[];
+    S.persons.splice(Math.min(undo.idx,S.persons.length),0,undo.person);S.current=undo.person.id;Object.assign(S.pzn,undo.pzn);
+    if(undo.doc&&!S.docs.some(x=>x.id===undo.doc.doc.id))S.docs.splice(Math.min(undo.doc.idx,S.docs.length),0,undo.doc.doc);
+    undo=null;save();render();toast("Wiederhergestellt.")},15000);}
+
+/* ===== Aktionen (Klicks) ===== */
+document.addEventListener("click",async e=>{
+  const ph=e.target.closest("[data-ph]");if(ph){const t=$(ph.dataset.for),a=t.selectionStart??t.value.length,b=t.selectionEnd??a;t.value=t.value.slice(0,a)+ph.dataset.ph+t.value.slice(b);t.focus();t.setSelectionRange(a+ph.dataset.ph.length,a+ph.dataset.ph.length);t.dispatchEvent(new Event("input",{bubbles:true}));return}
+  const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act,id=b.dataset.id,p=P();
+  switch(a){
+    case "sheet-close":closeSheet();break;
+    case "copy-url":copyText(APP_URL,b);break;
+    case "persons":openSheet("persons");break;
+    case "person-pick":S.current=id;rxMsg=null;planMsg=null;planDoc=null;rxNote="";importNote=null;Object.keys(pk).forEach(k=>delete pk[k]);save();closeSheet();if(view==="rx")rxEnter();render();break;
+    case "person-add":{const np=newPerson("Person "+(S.persons.length+1));S.persons.push(np);S.current=np.id;save();if(!$("sheet").hidden)closeSheet();openMore.add("persons");go("more");setTimeout(()=>{const i=$("pn_"+np.id);if(i){i.focus();i.select()}},50);break}
+    case "goto-more":closeSheet();openMore.add("persons");go("more");break;
+    case "import":openSheet("import");break;
+    case "imp-text":try{applyPlan(parseText($("impText").value))}catch(err){setStatus(err.message,"err")}break;
+    case "sample":SAMPLES.forEach((s,i)=>{const pl=parseBMP(s.xml);pl.meds.forEach((m,j)=>m.bestand=String(s.stock[j]));pl.patient.name+=" (Beispiel)";
+      let q=S.persons.find(x=>x.name===pl.patient.name);if(!q){q=!P().meds.length&&/^Person \d+$/.test(P().name)&&i===0?P():newPerson();if(!S.persons.includes(q))S.persons.push(q)}
+      q.name=pl.patient.name;q.meds=pl.meds;q.patient=pl.patient;q.order.docId=findOrCreateDoc({name:pl.patient.praxis}).id;if(i===0)S.current=q.id});save();render();break;
+    case "note-x":importNote=null;renderMeds();break;
+    case "med-open":medDel=false;openSheet("med",id);break;
+    case "med-new":{const m=newMed({noName:true,name:"Neues Medikament",m:1});p.meds.push(m);save();medDel=false;openSheet("med",m.id);setTimeout(()=>$("md_name")?.focus(),50);break}
+    case "med-del":medDel=true;shMed(sheetArg);break;
+    case "med-del-no":medDel=false;shMed(sheetArg);break;
+    case "med-del-yes":{const m=p.meds.find(x=>x.id===sheetArg);p.meds=p.meds.filter(x=>x.id!==sheetArg);delete pk[sheetArg];save();medDel=false;closeSheet();toast(`${m?.name||"Medikament"} entfernt.`);break}
+    case "stock":openSheet("stock");break;
+    case "plan":planMsg=null;planDoc=null;openSheet("plan");break;
+    case "draft":{const v=$(b.dataset.src)?.value||"",url=mailto(b.dataset.to,v),note=$(b.dataset.src+"_dn");note.hidden=true;
+      let left=false;const mark=()=>{left=true};document.addEventListener("visibilitychange",mark,{once:true});window.addEventListener("blur",mark,{once:true});
+      const tryA=t=>{const a=document.createElement("a");a.href=url;if(t)a.target=t;a.rel="noopener";document.body.appendChild(a);a.click();a.remove()};
+      try{tryA("_top")}catch(err){}
+      setTimeout(()=>{if(left)return;try{tryA("_blank")}catch(err){}
+        setTimeout(()=>{if(left)return;try{window.open(url,"_blank")}catch(err){}
+          setTimeout(()=>{if(!left)note.hidden=false},1200)},900)},900);
+      break}
+    case "cp":{const v=$(b.dataset.src)?.value||"",x=splitMail(v);copyText(b.dataset.part==="to"?b.dataset.to:b.dataset.part==="subj"?x.subj:x.body,b);break}
+    case "pk-book":bookPicked();if(sheetKind==="stock")closeSheet();else render();break;
+    case "pk-drop":{const m=p.meds.find(x=>x.id===id);m.pending=null;delete pk[id];save();toast(`Anforderung für ${m.name} verworfen.`);render();break}
+    case "rx-low":rxStep=1;p.meds.forEach(m=>{if(m.order&&!isLow(m))m.order=false});rxPreselect();rxMsg=null;go("rx");break;
+    case "rx-pick":rxStep=3;go("rx");break;
+    case "rx-step":rxStep=+b.dataset.step;if(rxStep===2)rxMsg=rxMsg??null;renderRx();window.scrollTo(0,0);break;
+    case "rx-qty":{const m=p.meds.find(x=>x.id===id);m.menge=Math.max(1,Math.min(9,(m.menge||1)+(+b.dataset.d)));rxMsg=null;save();renderRx();break}
+    case "rx-regen":rxMsg=rxMailText();renderRx();break;
+    case "rx-sent":{const sel=p.meds.filter(m=>m.order&&!m.pending);sel.forEach(m=>{m.order=false;m.lastOrder=today();m.pending={menge:m.menge,packung:m.packung,date:today()}});
+      rxMsg=null;rxNote="";save();rxStep=3;render();window.scrollTo(0,0);toast(`${sel.length} Medikament${sel.length>1?"e":""} als angefordert gemerkt. Nach dem Abholen hier abhaken.`,null,null,6000);break}
+    case "doc-edit":openSheet("doc",id);break;
+    case "doc-done":closeSheet();if(view==="rx"){rxMsg=null}break;
+    case "doc-add":{const d={id:uid(),name:"",email:"",phone:"",addr:""};S.docs.push(d);save();openMore.add("docs");renderMore();$("df_name_"+d.id)?.focus();break}
+    case "d-del":delDocId=id;renderMore();break;
+    case "d-del-no":delDocId=null;renderMore();break;
+    case "d-del-yes":S.docs=S.docs.filter(d=>d.id!==id);S.persons.forEach(q=>{if(q.order?.docId===id)delete q.order.docId});delDocId=null;save();render();break;
+    case "p-del":delId=id;renderMore();break;
+    case "p-del-no":delId=null;renderMore();break;
+    case "p-del-yes":delPerson();break;
+    case "tpl-reset":delete S[b.dataset.key];save();renderMore();toast("Standardvorlage wiederhergestellt.");break;
+    case "bk-make":{const pw=$("bkPass").value;if(pw.length<6){toast("Bitte ein Passwort mit mindestens 6 Zeichen eingeben.");$("bkPass").focus();break}
+      try{const t=await makeBackup(pw),o=$("bkOut");o.hidden=false;o.value=t;try{await navigator.clipboard.writeText(t);toast("Sicherung kopiert. An dich selbst schicken, Passwort getrennt merken.",null,null,6000)}catch(err){o.focus();o.select();toast("Text ist markiert. Jetzt kopieren.")}}catch(err){toast(err.message)}break}
+    case "rs-check":{try{const o=await readBackup($("rsText").value,$("rsPass").value);pendingRestore=o;const m=o.S.persons.reduce((x,q)=>x+(q.meds?.length||0),0);
+      $("rsConfirm").innerHTML=`<div class="confirm"><b>Sicherung vom ${new Date(o.created).toLocaleString("de-DE")}</b><span class="small">${o.S.persons.length} Person(en), ${m} Medikamente, ${(o.S.docs||[]).length} Ärzte. Die Daten auf diesem Gerät werden ersetzt.</span><div class="btns"><button class="btn danger" data-act="rs-yes">Ja, ersetzen</button><button class="btn ghost" data-act="rs-no">Abbrechen</button></div></div>`}
+      catch(err){$("rsConfirm").innerHTML=`<p class="note err">${esc(err.message)}</p>`}break}
+    case "rs-no":pendingRestore=null;$("rsConfirm").innerHTML="";break;
+    case "rs-yes":if(!pendingRestore)break;purgeTransient();S=pendingRestore.S;pendingRestore=null;S.persons=S.persons||[];S.persons.forEach(p=>{p.order=p.order||{}});migrate();
+      if(!S.persons.length)S.persons.push(newPerson("Person 1"));if(!S.persons.find(q=>q.id===S.current))S.current=S.persons[0].id;save();go("home");toast("Sicherung eingelesen.");break;
+  }
+});
+let pendingRestore=null;
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("sheet").hidden)closeSheet()});
+
+/* ===== Start ===== */
+go(P().meds.length?"home":"home");
+
+})();
+</script>
+<script>if("serviceWorker" in navigator&&location.protocol.startsWith("http"))addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))</script>
+</body>
+</html>

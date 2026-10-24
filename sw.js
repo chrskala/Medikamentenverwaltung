@@ -1,4 +1,4 @@
-const CACHE="medplan-v12";
+const CACHE="medplan-v13";
 const FILES=["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png","icon-maskable-512.png","apple-touch-icon.png",
 "vendor/zxing.min.js","vendor/pdf.min.js","vendor/pdf.worker.min.js","vendor/tesseract.min.js","vendor/worker.min.js",
 "vendor/core/tesseract-core-lstm.wasm.js","vendor/core/tesseract-core-simd-lstm.wasm.js","vendor/lang/deu.traineddata.gz"];

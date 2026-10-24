@@ -494,12 +494,23 @@ const addD=(iso,n)=>{const d=new Date(iso+"T12:00:00");d.setDate(d.getDate()+n);
 const diffD=(a,b)=>Math.round((new Date(a+"T12:00:00")-new Date(b+"T12:00:00"))/864e5);
 const fmtDay=iso=>{const d=new Date(iso+"T12:00:00");return ["So","Mo","Di","Mi","Do","Fr","Sa"][d.getDay()]+" "+String(d.getDate()).padStart(2,"0")+"."+String(d.getMonth()+1).padStart(2,"0")+"."};
 const inBox=m=>m.inBox!=null?m.inBox:((m.einheit||"Stück")==="Stück"&&(m.m+m.d+m.v+m.h)>0&&!/inj|tropf|spray|salbe|creme|gel|pflast|inhal|saft|l[öo]sung/i.test(m.form||""));
-function boxInfo(p){const b=p?.box;if(!b)return null;const until=addD(b.start,b.days-1),left=Math.max(0,diffD(until,todayIso())+1),buf=S.boxBuffer??2,next=addD(until,-buf),due=diffD(todayIso(),next)>=0;
-  return {until,left,next,due,empty:left===0,buf}}
+const SLOTS=[["m","Morgens"],["d","Mittags"],["v","Abends"],["h","Zur Nacht"]];
+function migrateBox(p){const b=p.box;if(b&&!b.slots){const sl={};SLOTS.forEach(([k])=>{if(p.meds.some(m=>inBox(m)&&m[k]>0))sl[k]={start:b.start,days:b.days}});
+  const cov={};Object.entries(b.cover||{}).forEach(([id,c])=>{cov[id]={};Object.keys(sl).forEach(k=>cov[id][k]=c)});p.box={slots:sl,deducted:b.deducted,cover:cov}}}
+const usedSlots=p=>SLOTS.filter(([k])=>p.meds.some(m=>inBox(m)&&m[k]>0));
+function slotInfo(sl){const until=addD(sl.start,sl.days-1);return {until,left:Math.max(0,diffD(until,todayIso())+1)}}
+function boxInfo(p){if(!p?.box)return null;migrateBox(p);const sl=p.box.slots||{},rows=[];
+  usedSlots(p).forEach(([k,l])=>{if(sl[k]&&sl[k].days>0){const i=slotInfo(sl[k]);rows.push({k,l,...i})}else rows.push({k,l,until:null,left:0})});
+  if(!rows.length)return null;const first=rows.reduce((a,r)=>(r.left<a.left?r:a),rows[0]),buf=S.boxBuffer??2;
+  const until=first.until||todayIso(),next=first.until?addD(first.until,-buf):todayIso();
+  return {rows,until,left:first.left,first,next,due:diffD(todayIso(),next)>=0,empty:first.left===0,buf}}
 const personOf=m=>S.persons.find(p=>p.meds.includes(m));
 function reach(m){const d=daily(m),b=num(m.bestand);if(!d||m.bestand===""||m.bestand==null)return null;
-  const p=personOf(m),bi=p&&p.box&&p.box.deducted&&inBox(m)?boxInfo(p):null;return Math.floor(b/d)+(bi?boxLeftMed(p,m,bi):0)}
-function boxLeftMed(p,m,bi){const c=p.box.cover?.[m.id];if(c==null||c>=p.box.days)return bi.left;return Math.max(0,diffD(addD(p.box.start,c-1),todayIso())+1)}
+  const p=personOf(m),bi=p&&p.box&&p.box.deducted&&inBox(m)?boxInfo(p):null;return Math.floor(b/d)+(bi?boxLeftMed(p,m):0)}
+function boxLeftMed(p,m){const sl=p.box.slots||{};let left=Infinity;
+  SLOTS.forEach(([k])=>{if(!(m[k]>0))return;const s=sl[k];if(!s||!(s.days>0)){left=0;return}
+    const c=p.box.cover?.[m.id]?.[k];const l=(c!=null&&c<s.days)?Math.max(0,diffD(addD(s.start,c-1),todayIso())+1):slotInfo(s).left;left=Math.min(left,l)});
+  return left===Infinity?0:left}
 function reachPill(m){const r=reach(m);if(r===null)return '<span class="pill">Vorrat ?</span>';
   const until=new Date(Date.now()+r*864e5).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"});
   const cls=r<=3?"out":r<S.threshold?"low":"";return `<span class="pill ${cls}">${r} Tage · bis ${until}</span>`}
@@ -649,7 +660,7 @@ function renderHome(){
     h+=`<div class="card ok"><div class="kicker">Alles versorgt</div><p>${nxt?`Als Nächstes wird <b>${esc(nxt.name)}</b> knapp, in ${reach(nxt)} Tagen.`:"Kein Medikament ist knapp."}</p></div>`}
   const bi=boxInfo(p);
   h+=bi?`<div class="card ${bi.empty?"warn":bi.due?"warn":""}"><div class="kicker">Tagesboxen</div>
-    <p>${bi.empty?"<b>Die Boxen sind leer.</b>":`Gerichtet bis <b>${fmtDay(bi.until)}</b> · noch ${bi.left} Tag${bi.left===1?"":"e"}`}</p>
+    <div class="rows">${bi.rows.map(r=>`<div><b>${r.l}</b><span class="r">${r.until?(r.left?`bis ${fmtDay(r.until)} · ${r.left} T.`:"leer"):"nicht gerichtet"}</span></div>`).join("")}</div>
     <p class="small ${bi.due?"":"muted"}">${bi.due?`<b>Jetzt neu richten</b> (Puffer ${bi.buf} Tage)`:`Neu richten am <b>${fmtDay(bi.next)}</b>`}</p>
     <button class="btn ${bi.due?"":"sec"} block" data-act="box">Boxen gerichtet</button></div>`
     :`<div class="card"><div class="kicker">Tagesboxen</div><p class="small muted">Richtest du Tagesboxen? Dann hier eintragen, die App erinnert ans Neurichten.</p><button class="btn sec block" data-act="box">Boxen gerichtet</button></div>`;
@@ -697,7 +708,7 @@ function shMed(id){const p=P(),m=p.meds.find(x=>x.id===id);if(!m){closeSheet();r
     <div class="grid2"><label for="md_b">Vorrat jetzt (${u})<input id="md_b" data-f="bestand" inputmode="decimal" value="${m.bestand===""||m.bestand==null?"":fmtN(m.bestand)}" placeholder="?"></label>
     <label for="md_pk">Packungsgröße (${u})<input id="md_pk" data-f="packung" inputmode="numeric" value="${esc(m.packung)}"></label></div>
     <label class="chk" for="md_box"><input type="checkbox" id="md_box" data-f="inBox" ${inBox(m)?"checked":""}> In Tagesbox</label>
-    <p class="small">${reach(m)===null?'<span class="pill gray">Reichweite unbekannt</span>':reachPill(m)}${P().box?.deducted&&inBox(m)&&boxInfo(P())?.left?` <span class="small muted">inkl. ${boxInfo(P()).left} Tage in den Boxen</span>`:""}</p></div>
+    <p class="small">${reach(m)===null?'<span class="pill gray">Reichweite unbekannt</span>':reachPill(m)}${P().box?.deducted&&inBox(m)&&boxInfo(P())&&boxLeftMed(P(),m)?` <span class="small muted">inkl. ${boxLeftMed(P(),m)} Tage in den Boxen</span>`:""}</p></div>
   ${medDel?`<div class="confirm"><b>${esc(m.name)} wirklich entfernen?</b><div class="btns"><button class="btn danger" data-act="med-del-yes">Ja, entfernen</button><button class="btn ghost" data-act="med-del-no">Abbrechen</button></div></div>`
   :`<button class="btn ghost block" data-act="med-del" style="color:var(--bad)">Medikament entfernen</button>`}
   <button class="btn block" data-act="sheet-close">Fertig</button>`;
@@ -716,34 +727,49 @@ $("sheetBody").addEventListener("change",e=>{
 /* ===== Tagesboxen richten ===== */
 let boxDraft=null;
 function shBox(){const p=P(),bi=boxInfo(p);$("sheetTitle").textContent="Tagesboxen gerichtet";
-  if(!boxDraft){const startDef=bi&&!bi.empty?addD(bi.until,1):todayIso();boxDraft={days:p.box?.days||14,start:startDef,deduct:true}}
-  const d=boxDraft,until=addD(d.start,d.days-1),meds=p.meds.filter(inBox),next=addD(until,-(S.boxBuffer??2));
-  const rows=meds.map(m=>{const need=Math.round(daily(m)*d.days*100)/100,have=m.bestand===""||m.bestand==null?null:num(m.bestand);
+  const used=usedSlots(p);
+  if(!boxDraft){boxDraft={deduct:true,slots:{}};used.forEach(([k])=>{const old=p.box?.slots?.[k],oi=old&&old.days>0?slotInfo(old):null;
+    boxDraft.slots[k]={on:true,days:old?.days||14,start:oi&&oi.left>0?addD(oi.until,1):todayIso()}})}
+  const d=boxDraft,buf=S.boxBuffer??2;
+  const slotCards=used.map(([k,l])=>{const x=d.slots[k],old=p.box?.slots?.[k],oi=old&&old.days>0?slotInfo(old):null;
+    return `<div class="card"><label class="chk" for="bxOn_${k}"><input type="checkbox" id="bxOn_${k}" data-bx="on" data-k="${k}" ${x.on?"checked":""}> <b>${l}</b> gerichtet</label>
+    ${x.on?`<div class="grid2"><label for="bxDays_${k}">Anzahl Tage<input id="bxDays_${k}" data-bx="days" data-k="${k}" inputmode="numeric" value="${x.days}" style="font-weight:700"></label>
+      <label for="bxStart_${k}">Ab<input id="bxStart_${k}" type="date" data-bx="start" data-k="${k}" value="${x.start}"></label></div>
+      <div class="chips">${[7,10,14,21,28].map(n=>`<button class="chip" data-act="bx-days" data-k="${k}" data-n="${n}">${n}</button>`).join("")}</div>
+      <p class="small">Reicht bis <b>${fmtDay(addD(x.start,x.days-1))}</b>${oi&&oi.left?` <span class="muted">(bisher bis ${fmtDay(oi.until)})</span>`:""}</p>`
+    :`<p class="small muted">${oi?(oi.left?`Bleibt wie bisher: bis ${fmtDay(oi.until)}`:"Bleibt leer"):"Nicht gerichtet"}</p>`}</div>`}).join("");
+  const plan=SLOTS.map(([k])=>{const x=d.slots[k];if(x&&x.on)return {k,start:x.start,days:x.days};const o=p.box?.slots?.[k];return o&&o.days>0?{k,...o}:null}).filter(Boolean)
+    .filter(x=>used.some(([k])=>k===x.k));
+  const firstUntil=plan.length&&plan.length===used.length?plan.map(x=>addD(x.start,x.days-1)).sort()[0]:null;
+  const f=x=>((RHYTHM[x.rhythm]||RHYTHM.d1)[0]);
+  const rows=p.meds.filter(inBox).map(m=>{const need=Math.round(used.reduce((a,[k])=>a+(d.slots[k]?.on?m[k]*f(m)*d.slots[k].days:0),0)*100)/100;if(!need)return "";
+    const have=m.bestand===""||m.bestand==null?null:num(m.bestand);
     return `<div><span><b>${esc(m.name)}</b><br><span class="small muted">${esc(doseStr(m))}${m.rhythm&&m.rhythm!=="d1"?" · "+RHYTHM[m.rhythm][1]:""}</span></span><span class="r">${fmtN(need)} ${esc(unitShort(m))}${have!==null&&have<need?`<br><span class="pill out">nur ${fmtN(have)} da</span>`:""}</span></div>`}).join("");
-  $("sheetBody").innerHTML=`<div class="card">
-    <label for="bxDays">Für wie viele Tage gerichtet?<input id="bxDays" inputmode="numeric" value="${d.days}" style="font-weight:700"></label>
-    <div class="chips">${[7,14,21,28].map(n=>`<button class="chip" data-act="bx-days" data-n="${n}">${n} Tage</button>`).join("")}</div>
-    <label for="bxStart">Erster Tag der neuen Boxen<input id="bxStart" type="date" value="${d.start}"></label>
-    ${bi&&!bi.empty?`<p class="small muted">Die alten Boxen reichen noch bis ${fmtDay(bi.until)}, darum starten die neuen am Tag danach.</p>`:""}
-    <p class="note ok">Reicht bis <b>${fmtDay(until)}</b> · Erinnerung zum Neurichten am <b>${fmtDay(next)}</b></p></div>
+  $("sheetBody").innerHTML=(used.length?slotCards:'<p class="note warn">Kein Medikament ist für die Tagesbox markiert.</p>')+`
+  ${firstUntil?`<p class="note ok">Zuerst leer: <b>${fmtDay(firstUntil)}</b> · Erinnerung zum Neurichten am <b>${fmtDay(addD(firstUntil,-buf))}</b></p>`:""}
   <div class="card"><label class="chk" for="bxDed"><input type="checkbox" id="bxDed" ${d.deduct?"checked":""}> Tabletten vom Vorrat abziehen</label>
     <p class="small muted">So viel wandert aus dem Vorrat in die Boxen:</p>
-    <div class="rows">${rows||'<p class="muted small">Kein Medikament ist für die Box markiert.</p>'}</div>
+    <div class="rows">${rows||'<p class="muted small">Nichts ausgewählt.</p>'}</div>
     <p class="small muted">Nicht in der Box sind z. B. Insulin, Tropfen oder Sprays. Das lässt sich pro Medikament unter „In Tagesbox“ ändern.</p></div>
-  <button class="btn block" data-act="bx-save">Speichern</button>
-  ${(p.boxLog||[]).length?`<div class="card"><div class="kicker">Zuletzt gerichtet</div><div class="rows">${p.boxLog.slice(-5).reverse().map(x=>`<div><span>${fmtDay(x.at)}</span><span class="r">${x.days} Tage, ab ${fmtDay(x.start)}</span></div>`).join("")}</div></div>`:""}`;
-  $("bxDays").onchange=e=>{boxDraft.days=Math.max(1,Math.min(90,Math.round(num(e.target.value))||14));shBox()};
-  $("bxStart").onchange=e=>{if(e.target.value)boxDraft.start=e.target.value;shBox()};
+  <button class="btn block" data-act="bx-save" ${used.some(([k])=>d.slots[k]?.on)?"":"disabled"}>Speichern</button>
+  ${(p.boxLog||[]).length?`<div class="card"><div class="kicker">Zuletzt gerichtet</div><div class="rows">${p.boxLog.slice(-5).reverse().map(x=>`<div><span>${fmtDay(x.at)}</span><span class="r">${x.slots?Object.entries(x.slots).map(([k,v])=>`${(SLOTS.find(z=>z[0]===k)||[,k])[1]} ${v.days}`).join(", "):x.days+" Tage"}</span></div>`).join("")}</div></div>`:""}`;
   $("bxDed").onchange=e=>{boxDraft.deduct=e.target.checked}}
-function saveBox(){const p=P(),d=boxDraft;if(!d)return;
-  const cover={},short=[];
-  if(d.deduct)p.meds.filter(inBox).forEach(m=>{if(m.bestand===""||m.bestand==null)return;const need=daily(m)*d.days,have=num(m.bestand);
-    if(have+1e-9<need){const dd=daily(m);cover[m.id]=dd?Math.floor(have/dd):0;short.push(`${m.name} (reicht ${cover[m.id]} Tage)`);m.bestand="0"}
-    else m.bestand=String(Math.max(0,Math.round((have-need)*100)/100))});
-  p.box={start:d.start,days:d.days,deducted:d.deduct,cover};
-  p.boxLog=(p.boxLog||[]).concat([{at:todayIso(),start:d.start,days:d.days}]).slice(-20);
+$("sheetBody").addEventListener("change",e=>{if(sheetKind!=="box")return;const t=e.target,k=t.dataset.k,w=t.dataset.bx;if(!w||!boxDraft?.slots[k])return;const x=boxDraft.slots[k];
+  if(w==="on")x.on=t.checked;if(w==="days")x.days=Math.max(1,Math.min(90,Math.round(num(t.value))||14));if(w==="start"&&t.value)x.start=t.value;
+  const y=$("sheet").querySelector(".sheet-body").scrollTop;shBox();$("sheet").querySelector(".sheet-body").scrollTop=y});
+function saveBox(){const p=P(),d=boxDraft;if(!d)return;migrateBox(p);
+  const box=p.box||{slots:{},cover:{}};box.slots=box.slots||{};box.cover=box.cover||{};
+  const f=x=>((RHYTHM[x.rhythm]||RHYTHM.d1)[0]),short=[],log={};
+  Object.entries(d.slots).forEach(([k,x])=>{if(!x.on)return;box.slots[k]={start:x.start,days:x.days};log[k]={start:x.start,days:x.days};p.meds.forEach(m=>{if(box.cover[m.id])delete box.cover[m.id][k]})});
+  if(d.deduct)p.meds.filter(inBox).forEach(m=>{if(m.bestand===""||m.bestand==null)return;let have=num(m.bestand);
+    Object.entries(d.slots).forEach(([k,x])=>{if(!x.on||!(m[k]>0))return;const per=m[k]*f(m),need=per*x.days;
+      if(have+1e-9<need){const c=per?Math.floor(have/per):0;(box.cover[m.id]=box.cover[m.id]||{})[k]=c;short.push(`${m.name} ${(SLOTS.find(z=>z[0]===k)||[,k])[1].toLowerCase()} (${c} Tage)`);have=0}
+      else have-=need});
+    m.bestand=String(Math.max(0,Math.round(have*100)/100))});
+  box.deducted=d.deduct||!!box.deducted;p.box=box;
+  p.boxLog=(p.boxLog||[]).concat([{at:todayIso(),slots:log}]).slice(-20);
   boxDraft=null;save();closeSheet();const bi=boxInfo(p);
-  toast(short.length?`Gespeichert. Zu wenig Vorrat: ${short.join(", ")}. Bitte Rezept anfordern.`:`Gerichtet bis ${fmtDay(bi.until)}, Erinnerung am ${fmtDay(bi.next)}`,null,null,short.length?8000:5000)}
+  toast(short.length?`Gespeichert. Zu wenig Vorrat: ${short.join(", ")}. Bitte Rezept anfordern.`:bi&&bi.first.until?`Gespeichert. Zuerst leer: ${bi.first.l.toLowerCase()} am ${fmtDay(bi.first.until)}, Erinnerung am ${fmtDay(bi.next)}`:"Gespeichert.",null,null,short.length?8000:6000)}
 
 /* ===== Plan einlesen ===== */
 function shImport(){$("sheetTitle").textContent="Plan einlesen";
@@ -1008,7 +1034,7 @@ document.addEventListener("click",async e=>{
     case "med-del-yes":{const m=p.meds.find(x=>x.id===sheetArg);p.meds=p.meds.filter(x=>x.id!==sheetArg);delete pk[sheetArg];save();medDel=false;closeSheet();toast(`${m?.name||"Medikament"} entfernt.`);break}
     case "stock":openSheet("stock");break;
     case "box":boxDraft=null;openSheet("box");break;
-    case "bx-days":boxDraft.days=+b.dataset.n;shBox();break;
+    case "bx-days":{const x=boxDraft?.slots[b.dataset.k];if(x){x.days=+b.dataset.n;const y=$("sheet").querySelector(".sheet-body").scrollTop;shBox();$("sheet").querySelector(".sheet-body").scrollTop=y}break}
     case "bx-save":saveBox();break;
     case "plan":planMsg=null;planDoc=null;openSheet("plan");break;
     case "draft":{const v=$(b.dataset.src)?.value||"",url=mailto(b.dataset.to,v),note=$(b.dataset.src+"_dn");note.hidden=true;
